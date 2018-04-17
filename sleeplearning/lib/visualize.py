@@ -18,7 +18,7 @@ class Visualize(object):
         for sl in self.data:
             sleep_stage_dist.append(sl.hypnogram)
             total_labels += len(sl.hypnogram)
-            subject_labels.append(sl.id_)
+            subject_labels.append(sl.label)
         plt.figure(figsize=(10, 5))
 
         plt.hist(sleep_stage_dist, label=subject_labels,
@@ -55,7 +55,9 @@ class Visualize(object):
         for i in sleep_phases:
             y = np.array([])
             for sl in self.data:
-                f, periodograms = sl.get_psds(channel)
+                window = sl.sampling_rate_ * 2
+                stride = sl.sampling_rate_
+                f, periodograms = sl.get_psds(channel, window, stride)
                 ind = np.where(sl.hypnogram == i)[0]
                 y_add = periodograms[ind]
                 # remove none types (epochs with only artefacts)
@@ -84,19 +86,21 @@ class Visualize(object):
             else:
                 sleep_phase = "UNK"
             f, axarr = plt.subplots(1, 3, sharex=False, figsize=(20, 5))
-            f.suptitle('[' + sl.id_ + '] - epoch ' + str(
+            f.suptitle('[' + sl.label + '] - epoch ' + str(
                 epoch_index) + ' - sleep phase: [' + sleep_phase + ']',
                        fontsize=16)
             t = 20 * np.arange(5000, dtype=float) / 5000
             # t+=offset/30
-            samples_per_epoch = sl.sampling_rate_ * sl.epoch_size
-            psg = sl.psgs_[channel][epoch_index * samples_per_epoch:
+            samples_per_epoch = sl.sampling_rate_ * sl.epoch_length
+            psg = sl.psgs[channel][epoch_index * samples_per_epoch:
                                     (epoch_index + 1) * samples_per_epoch]
             axarr[0].plot(t, psg)
             axarr[0].set_xlabel("time [s]")
             axarr[0].set_ylabel("mV")
 
-            f, t, Sxx_list = sl.get_spectrograms(channel)
+            window = sl.sampling_rate_ * 2
+            stride = sl.sampling_rate_
+            f, t, Sxx_list = sl.get_spectrograms(channel, window, stride)
             Sxx = Sxx_list[epoch_index]
             Sxx = Sxx ** 2  # psd from magnitude spectrum
             db = 10 * np.log10(Sxx)  # convert to dB
@@ -105,7 +109,9 @@ class Visualize(object):
             axarr[1].set_xlabel("time [s]")
             axarr[1].set_ylabel('frequency [Hz]')
             axarr[1].set_ylim(ymin=30)
-            f, Pxx_list = sl.get_psds(channel)
+            window = sl.sampling_rate_*2
+            stride = sl.sampling_rate_
+            f, Pxx_list = sl.get_psds(channel, window, stride)
             pxx = Pxx_list[epoch_index]
             axarr[2].plot(f, pxx)
             axarr[2].set_ylabel("$\mu$V**2/Hz")
@@ -118,23 +124,24 @@ class Visualize(object):
             if to_epoch is None:
                 # set to last epoch of sample if no value given
                 to_epoch = int(len(
-                    sl.psgs_[channel]) // sl.epoch_size // sl.sampling_rate_)
+                    sl.psgs[channel]) // sl.epoch_length // sl.sampling_rate_)
 
             fig, axarr = plt.subplots(3, sharex=True, sharey=False,
                                       figsize=(20, 20))
             fig.suptitle(
-                '[' + sl.id_ + '] Qualitative Analysis (epoch length ' + str(
-                    sl.epoch_size) + 's)', fontsize=16)
-            samples_per_epoch = sl.sampling_rate_ * sl.epoch_size
-            print(samples_per_epoch)
+                '[' + sl.label + '] Qualitative Analysis (epoch length ' + str(
+                    sl.epoch_length) + 's)', fontsize=16)
+            samples_per_epoch = sl.sampling_rate_ * sl.epoch_length
             axarr[0].set_xlim(xmin=from_epoch, xmax=to_epoch)
             axarr[0].plot(np.linspace(from_epoch, to_epoch, (
                         to_epoch - from_epoch) * samples_per_epoch),
-                          sl.psgs_[channel][from_epoch * samples_per_epoch:
+                          sl.psgs[channel][from_epoch * samples_per_epoch:
                                             to_epoch * samples_per_epoch])
             axarr[0].set_ylim(ymin=-300, ymax=300)
             axarr[0].set_ylabel('mV')
-            f, t, Sxx_list = sl.get_spectrograms(channel)
+            window = sl.sampling_rate_ * 2
+            stride = sl.sampling_rate_
+            f, t, Sxx_list = sl.get_spectrograms(channel, window, stride)
             Sxx = Sxx_list[from_epoch:to_epoch]
             # compute psd from magnitude
             Sxx = Sxx ** 2
