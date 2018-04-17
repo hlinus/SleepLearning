@@ -1,16 +1,19 @@
 name: sleep-learning
 channels:
+  - soumith
   - defaults
 dependencies:
   - alabaster=0.7.10=py36h306e16b_0
   - asn1crypto=0.24.0=py36_0
   - babel=2.5.3=py36_0
   - bleach=2.1.3=py36_0
-  - ca-certificates=2017.08.26=h1d4fec5_0
+  - ca-certificates=2018.03.07=0
   - certifi=2018.1.18=py36_0
   - cffi=1.11.5=py36h9745a5d_0
   - chardet=3.0.4=py36h0f667ec_1
   - cryptography=2.1.4=py36hd09be54_0
+  - cudatoolkit=8.0=3
+  - cudnn=7.0.5=cuda8.0_0
   - cycler=0.10.0=py36h93f1223_0
   - dbus=1.12.2=hc3f9b76_1
   - decorator=4.2.1=py36_0
@@ -48,26 +51,31 @@ dependencies:
   - libpng=1.6.34=hb9fc6fc_0
   - libsodium=1.0.15=hf101ebd_0
   - libstdcxx-ng=7.2.0=hdf63c60_3
+  - libtiff=4.0.9=h28f6b97_0
   - libxcb=1.12=hcd93eb1_4
   - libxml2=2.9.7=h26e45fe_0
   - markupsafe=1.0=py36hd9260cd_1
   - matplotlib=2.2.2=py36h0e671d2_0
   - mistune=0.8.3=py36_0
-  - mkl=2018.0.1=h19d6760_4
+  - mkl=2018.0.2=1
   - nbconvert=5.3.1=py36hb41ffb7_0
   - nbformat=4.4.0=py36h31c9010_0
+  - nccl=1.3.4=cuda8.0_1
   - ncurses=6.0=h9df7e31_2
   - notebook=5.4.1=py36_0
   - numpy=1.14.2=py36hdbf6ddf_0
   - numpydoc=0.7.0=py36h18f165f_0
-  - openssl=1.0.2n=hb7f436b_0
+  - olefile=0.45.1=py36_0
+  - openssl=1.0.2o=h20670df_0
   - packaging=17.1=py36_0
+  - pandas=0.22.0=py36hf484d3e_0
   - pandoc=1.19.2.1=hea2e7c5_1
   - pandocfilters=1.4.2=py36ha6701b7_1
   - parso=0.1.1=py36h35f843b_0
   - pcre=8.41=hc27e229_1
   - pexpect=4.4.0=py36_0
   - pickleshare=0.7.4=py36h63277f8_0
+  - pillow=5.0.0=py36h3deb7b8_0
   - pip=9.0.1=py36_5
   - prompt_toolkit=1.0.15=py36h17d85b1_0
   - ptyprocess=0.5.2=py36h69acd42_0
@@ -111,4 +119,9 @@ dependencies:
   - xz=5.2.3=h55aa19d_2
   - zeromq=4.2.3=h439df22_3
   - zlib=1.2.11=ha838bed_2
+  - pytorch=0.3.1=py36_cuda8.0.61_cudnn7.0.5_2
+  - torchvision=0.1.9=py36h7584368_1
+  - pip:
+    - mne==0.15.2
+    - torch==0.3.1.post2
 
