@@ -1,3 +1,4 @@
+import numpy as np
 import sys
 import argparse
 import torch
@@ -5,10 +6,10 @@ from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
 import torch.nn.functional as F
 import os
-
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 
+from sleeplearning.lib.base import SleepLearning
 from sleeplearning.lib.utils import SleepLearningDataset
 from sleeplearning.lib.model import Net
 
@@ -26,6 +27,8 @@ parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                     help='SGD momentum (default: 0.9)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
+parser.add_argument('--no-weight-loss', action='store_true', default=False,
+                    help='disables class weighted loss')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
@@ -39,15 +42,27 @@ if args.cuda:
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
-train_loader = DataLoader(
-    SleepLearningDataset('caroline_cut/train'),
-    batch_size=args.batch_size, shuffle=True, **kwargs)
-test_loader = DataLoader(SleepLearningDataset('caroline_cut/test'),
-                         batch_size=args.batch_size, shuffle=True, **kwargs)
 
+train_ds = SleepLearningDataset('samplewise/train')
+test_ds = SleepLearningDataset('samplewise/test')
+print("TRAIN: ", train_ds.dataset_info)
+print("TEST: ", test_ds.dataset_info)
+
+train_loader = DataLoader(train_ds, batch_size=args.batch_size,
+                          shuffle=True, **kwargs)
+
+test_loader = DataLoader(test_ds, batch_size=args.batch_size,
+                         shuffle=True, **kwargs)
+
+class_weights = torch.from_numpy(train_ds.weights).float() \
+    if not args.no_weight_loss \
+    else torch.from_numpy(np.ones(train_ds.weights.shape)).float()
+print("train class weights: ", class_weights)
 model = Net()
+
 if args.cuda:
     model.cuda()
+    class_weights = class_weights.cuda()
 
 # create a stochastic gradient descent optimizer
 # optimizer = optim.SGD(model.parameters(), lr=args.lr,
@@ -57,7 +72,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 criterion = F.nll_loss
 
 
-def train(epoch):
+def train(epoch: int):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
@@ -65,7 +80,7 @@ def train(epoch):
         data, target = Variable(data).float(), Variable(target).long()
         optimizer.zero_grad()
         output = model(data)
-        loss = criterion(output, target)
+        loss = criterion(output, target, weight=class_weights)
         loss.backward()
         optimizer.step()
         pred = output.data.max(1, keepdim=True)[
@@ -105,7 +120,6 @@ def test():
             100. * correct / len(test_loader.dataset)))
 
 
-print('Start training ...')
 for epoch in range(1, args.epochs + 1):
     train(epoch)
     test()
