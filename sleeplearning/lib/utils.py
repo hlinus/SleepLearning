@@ -162,25 +162,40 @@ def create_dataset(subjects: List[SleepLearning], neighbors: int, feature_union:
 class SleepLearningDataset(object):
     """Sleep Learning dataset."""
 
-    def __init__(self, foldr, transform = None):
+    def __init__(self, foldr: str, class_remapping: dict, transform = None):
         self.dir = '../data/processed/' + foldr + '/'
         self.X = [filename for filename in os.listdir(self.dir) if filename.endswith(".npz")]
+        self.class_remapping = class_remapping
+
         self.transform = transform
         with open(self.dir +'dataset_info.json') as data_file:
             self.dataset_info = json.load(data_file)
 
-        self.weights = np.array([])
-        total_classes = 0.0
+        remapped_distribution = {}
+        for k in class_remapping.values():
+            remapped_distribution[k] = 0
         for k, v in self.dataset_info['class_distribution'].items():
+            remapped_distribution[class_remapping[k]] += v
+        self.dataset_info['class_distribution'] = remapped_distribution
+
+        self.class_int_mapping = {}
+        for i, k in enumerate(self.dataset_info['class_distribution'].keys()):
+            self.class_int_mapping[k] = i
+
+        self.weights = np.zeros(len(self.dataset_info['class_distribution'].keys()))
+        total_classes = 0.0
+        for i, (k, v) in enumerate(self.dataset_info['class_distribution'].items()):
             total_classes += v
-            self.weights = np.append(self.weights, v+1)
+            self.weights[i] = v+1  # smooth
         self.weights = total_classes/self.weights
 
     def __getitem__(self, index):
         sample = np.load(self.dir + self.X[index])
 
         x = sample['x']
-        y_ = int(sample['y'])
+        y_str = SleepLearning.sleep_stages_labels[int(sample['y'])]
+        y_str_remapped = self.class_remapping[y_str]
+        y_ = int(self.class_int_mapping[y_str_remapped])
 
         if self.transform is not None:
             x = self.transform(x)

@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import sys
 import argparse
@@ -9,7 +11,6 @@ import os
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 
-from sleeplearning.lib.base import SleepLearning
 from sleeplearning.lib.utils import SleepLearningDataset
 from sleeplearning.lib.model import Net
 
@@ -31,95 +32,166 @@ parser.add_argument('--no-weight-loss', action='store_true', default=False,
                     help='disables class weighted loss')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
-parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+parser.add_argument('--log-interval', type=int, default=20, metavar='N',
                     help='how many batches to wait before logging training status')
-args = parser.parse_args()
-args.cuda = not args.no_cuda and torch.cuda.is_available()
-
-torch.manual_seed(args.seed)
-if args.cuda:
-    torch.cuda.manual_seed(args.seed)
-
-kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
 
-train_ds = SleepLearningDataset('samplewise/train')
-test_ds = SleepLearningDataset('samplewise/test')
-print("TRAIN: ", train_ds.dataset_info)
-print("TEST: ", test_ds.dataset_info)
+def main():
+    global args
+    args = parser.parse_args()
+    args.cuda = not args.no_cuda and torch.cuda.is_available()
 
-train_loader = DataLoader(train_ds, batch_size=args.batch_size,
-                          shuffle=True, **kwargs)
+    torch.manual_seed(args.seed)
+    if args.cuda:
+        torch.cuda.manual_seed(args.seed)
 
-test_loader = DataLoader(test_ds, batch_size=args.batch_size,
-                         shuffle=True, **kwargs)
+    kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
-class_weights = torch.from_numpy(train_ds.weights).float() \
-    if not args.no_weight_loss \
-    else torch.from_numpy(np.ones(train_ds.weights.shape)).float()
-print("train class weights: ", class_weights)
-model = Net()
+    four_label = {'N1':'NREM', 'N2':'NREM', 'N3':'NREM', 'N4':'NREM', 'WAKE':'WAKE', 'REM':'REM', 'Artifact':'Artifact'}
+    six_label = {'WAKE': 'WAKE', 'N1': 'N1', 'N2': 'N2', 'N3': 'N3', 'N4': 'Artifact', 'REM': 'REM', 'Artifact': 'Artifact'}
+    train_ds = SleepLearningDataset('samplewise/train', six_label)
+    test_ds = SleepLearningDataset('samplewise/test', six_label)
+    print("TRAIN: ", train_ds.dataset_info)
+    print("TEST: ", test_ds.dataset_info)
 
-if args.cuda:
-    model.cuda()
-    class_weights = class_weights.cuda()
+    train_loader = DataLoader(train_ds, batch_size=args.batch_size,
+                              shuffle=True, **kwargs)
 
-# create a stochastic gradient descent optimizer
-# optimizer = optim.SGD(model.parameters(), lr=args.lr,
-# momentum=args.momentum)
-optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-# create a loss function
-criterion = F.nll_loss
+    test_loader = DataLoader(test_ds, batch_size=args.test_batch_size,
+                             shuffle=True, **kwargs)
+
+    class_weights = torch.from_numpy(train_ds.weights).float() \
+        if not args.no_weight_loss \
+        else torch.from_numpy(np.ones(train_ds.weights.shape)).float()
+    print("train class weights: ", class_weights)
+    model = Net(num_classes=len(train_ds.dataset_info['class_distribution'].keys()))
+
+    # define loss function (criterion) and optimizer
+    criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+
+    if args.cuda:
+        model.cuda()
+        class_weights = class_weights.cuda()
+        criterion.cuda()
+
+    for epoch in range(1, args.epochs + 1):
+        train(train_loader, model, criterion, optimizer, epoch)
+        test(test_loader, model, criterion)
 
 
-def train(epoch: int):
+def train(train_loader: DataLoader, model: Net, criterion: F, optimizer, epoch):
     model.train()
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top2 = AverageMeter()
+
+    end = time.time()
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data).float(), Variable(target).long()
-        optimizer.zero_grad()
+
+        # compute output
         output = model(data)
-        loss = criterion(output, target, weight=class_weights)
+        loss = criterion(output, target)
+
+        # measure accuracy and record loss
+        prec1, prec2 = accuracy(output, target, topk=(1, 2))
+        losses.update(loss.data[0], data.size(0))
+        top1.update(prec1[0], data.size(0))
+        top2.update(prec2[0], data.size(0))
+
+        # compute gradient and do Adam step
+        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        pred = output.data.max(1, keepdim=True)[
-            1]  # get the index of the max log-probability
-        correct = pred.eq(target.data.view_as(pred)).long().cpu().sum()
+
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
 
         if batch_idx % args.log_interval == 0:
-            print(
-                'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}, Accuracy: '
-                '({:.0f}%)'.format(epoch, batch_idx * len(data),
-                                   len(train_loader.dataset),
-                                   100. * batch_idx / len(train_loader),
-                                   loss.data[0],
-                                   100. * correct / args.batch_size))
+            print('Epoch: [{0}]x[{1}/{2}]\t'
+                 'Time {batch_time.val:.1f} ({batch_time.avg:.1f})\t'
+                  'Loss {loss.val:.1f} ({loss.avg:.1f})\t'
+                  'Prec@1 {top1.val:.2f} ({top1.avg:.2f})\t'
+                  'Prec@2 {top2.val:.2f} ({top2.avg:.2f})'.format(
+                epoch, batch_idx, len(train_loader), batch_time=batch_time,
+                loss=losses, top1=top1, top2=top2))
 
 
-def test():
+def test(test_loader: DataLoader, model: Net, criterion: F):
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top2 = AverageMeter()
+
     model.eval()
-    test_loss = 0
-    correct = 0
+    end = time.time()
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data, volatile=True).float(), Variable(
             target).long()
+
+        # compute output
         output = model(data)
-        test_loss += F.nll_loss(output, target, size_average=False).data[
-            0]  # sum up batch loss
-        pred = output.data.max(1, keepdim=True)[
-            1]  # get the index of the max log-probability
-        correct += pred.eq(target.data.view_as(pred)).long().cpu().sum()
+        loss = criterion(output, target)
 
-    test_loss /= len(test_loader.dataset)
-    print(
-        '\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-            test_loss, correct, len(test_loader.dataset),
-            100. * correct / len(test_loader.dataset)))
+        # measure accuracy and record loss
+        prec1, prec2 = accuracy(output, target, topk=(1, 2))
+        losses.update(loss.data[0], data.size(0))
+        top1.update(prec1[0], data.size(0))
+        top2.update(prec2[0], data.size(0))
+
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
+
+    print('Test:  [{0}/{0}]\t\t'
+          'Time ({batch_time.avg:.1f})\t'
+          'Loss ({loss.avg:.1f})\t'
+          'Prec@1 ({top1.avg:.2f})\t\t'
+          'Prec@2 ({top2.avg:.2f})'.format(
+        len(test_loader), batch_time=batch_time,
+        loss=losses, top1=top1, top2=top2))
 
 
-for epoch in range(1, args.epochs + 1):
-    train(epoch)
-    test()
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+
+def accuracy(output, target, topk=(1,)):
+    """Computes the precision@k for the specified values of k"""
+    maxk = max(topk)
+    batch_size = target.size(0)
+
+    _, pred = output.topk(maxk, 1, True, True)
+    pred = pred.t()
+    correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+    res = []
+    for k in topk:
+        correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+        res.append((correct_k.mul_(100.0 / batch_size)).data.cpu().numpy())
+    return res
+
+
+if __name__ == '__main__':
+    main()
