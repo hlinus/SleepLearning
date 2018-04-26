@@ -1,5 +1,5 @@
 from typing import List
-from sleeplearning.lib.base import SleepLearning
+from sleeplearning.lib.loaders.subject import Subject
 import matplotlib.pyplot as plt
 import numpy as np
 import itertools
@@ -8,7 +8,7 @@ import itertools
 class Visualize(object):
     "Class to visualize psg data of a list of sleeplearning objects"
 
-    def __init__(self, sleeplearnings: List[SleepLearning]):
+    def __init__(self, sleeplearnings: List[Subject]):
         self.data = sleeplearnings
 
     def class_distribution(self):
@@ -28,10 +28,10 @@ class Visualize(object):
         plt.title(
             "Sleep Phases Distribution ({0} labels)".format(str(total_labels)))
         _ = plt.xticks(np.arange(7),
-                       list(SleepLearning.sleep_stages_labels.values()))
+                       list(Subject.sleep_stages_labels.values()))
 
     def transition_distribution(self):
-        num_sleep_phases = len(SleepLearning.sleep_stages_labels.keys())
+        num_sleep_phases = len(Subject.sleep_stages_labels.keys())
         M = np.zeros((num_sleep_phases, num_sleep_phases))
         for sl in self.data:
             for i, j in zip(sl.hypnogram, sl.hypnogram[1:]):
@@ -41,8 +41,8 @@ class Visualize(object):
         plt.figure()
         plt.imshow(M, interpolation='nearest', cmap=cmap)
         tick_marks = np.arange(num_sleep_phases)
-        plt.yticks(tick_marks, SleepLearning.sleep_stages_labels.values())
-        plt.xticks(tick_marks, SleepLearning.sleep_stages_labels.values())
+        plt.yticks(tick_marks, Subject.sleep_stages_labels.values())
+        plt.xticks(tick_marks, Subject.sleep_stages_labels.values())
         plt.title("Transition probabilities")
         for i, j in itertools.product(range(M.shape[0]), range(M.shape[1])):
             plt.text(j, i, '{:.2f}'.format(M[i, j]),
@@ -66,11 +66,11 @@ class Visualize(object):
             y_mean = np.mean(y, axis=0)
             error = np.std(y, axis=0)
 
-            ax.plot(f, y_mean, label=SleepLearning.sleep_stages_labels[i])
+            ax.plot(f, y_mean, label=Subject.sleep_stages_labels[i])
             # ax.fill_between(f, y_mean - error/2, y_mean + error/2,
             #                 alpha=0.3)
 
-        ax.set_xlim(xmin=0.5, xmax=50)
+        ax.set_xlim(xmin=0.5, xmax=100)
         ax.set_ylim(ymin=0.0099)
         ax.set_xlabel("Frequency (Hz)")
         ax.set_ylabel("PSD [$\mu$V**2/Hz]")
@@ -82,7 +82,7 @@ class Visualize(object):
         for sl in self.data:
             if sl.hypnogram is not None:
                 sleep_phase = sl.hypnogram[epoch_index]
-                sleep_phase = SleepLearning.sleep_stages_labels[sleep_phase]
+                sleep_phase = Subject.sleep_stages_labels[sleep_phase]
             else:
                 sleep_phase = "UNK"
             f, axarr = plt.subplots(1, 3, sharex=False, figsize=(20, 5))
@@ -156,8 +156,8 @@ class Visualize(object):
             h = range(from_epoch, to_epoch)
             axarr[2].plot(h, sl.hypnogram[from_epoch:to_epoch])
             axarr[2].set_yticks(
-                range(0, len(SleepLearning.sleep_stages_labels.keys())))
-            axarr[2].set_yticklabels(SleepLearning.sleep_stages_labels.values())
+                range(0, len(Subject.sleep_stages_labels.keys())))
+            axarr[2].set_yticklabels(Subject.sleep_stages_labels.values())
             axarr[2].set_xlim(xmin=from_epoch, xmax=to_epoch)
             axarr[2].set_xlabel("epoch")
             position = fig.add_axes([0.74, 0.633, 0.15, 0.01])

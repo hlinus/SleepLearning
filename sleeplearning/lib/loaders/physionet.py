@@ -2,10 +2,10 @@ import os
 
 import numpy as np
 
-from sleeplearning.lib.base import SleepLearning
+from sleeplearning.lib.loaders.subject import Subject
 
 
-class Physionet(SleepLearning):
+class Physionet(Subject):
     def __init__(self, path: str, epoch_length: int = 30):
         super().__init__(path, epoch_length)
         self.psgs = {}

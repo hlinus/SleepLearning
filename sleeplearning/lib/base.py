@@ -1,97 +1,190 @@
-from scipy import signal
-from abc import ABC
+import json
+import os
+import shutil
+import sys
+from argparse import Namespace
+from typing import List
 import numpy as np
-from typing import Tuple
+import torch
+from sklearn.pipeline import FeatureUnion
+from torch.utils.data import DataLoader
+root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
+sys.path.insert(0, root_dir)
+from sleeplearning.lib.loaders.subject import Subject
+from sleeplearning.lib.utils import SleepLearningDataset, train_epoch, \
+    validation_epoch, save_checkpoint
+from sleeplearning.lib.model import Net
+from sleeplearning.lib.feature_extractor import feats
 
 
-class SleepLearning(ABC):
-    """Base class which contains the data related to a single day/night of of a
-    single subject. There is a classmethod for every support file format which
-    can be used to read in the file and store it as sleeplearning object. To
-    support a new file format / dataset, a new class method has to be created.
+class SleepLearning(object):
+    def __init__(self, cuda: bool = True):
+        self.cuda = cuda and torch.cuda.is_available()
+        if self.cuda:
+            torch.cuda.manual_seed(1)
+            # remap to GPU0
+            self.remap_storage = lambda storage, loc: storage.cuda(0)
+        else:
+            # remap storage to CPU (needed for model load if no GPU avail.)
+            self.remap_storage = lambda storage, loc: storage
+        torch.manual_seed(1)
+        self.kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
 
-    Attributes
-    ----------
+        four_label = {'N1': 'NREM', 'N2': 'NREM', 'N3': 'NREM', 'N4': 'NREM',
+                      'WAKE': 'WAKE', 'REM': 'REM', 'Artifact': 'Artifact'}
 
-    psgs : iterable of dictionaries
-        Uniform raw data for various input formats and taken from one subject.
-        It is in an iterator over dictionaries, where dictionary key are various
-        descriptors of individual  polysomnographic (PSG) records.
-        The dictionary contains:
-         * TODO
+        self.label_remapping = {'WAKE': 'WAKE', 'N1': 'N1', 'N2': 'N2', 'N3': 'N3',
+                     'N4': 'Artifact', 'REM': 'REM', 'Artifact': 'Artifact'}
 
-    spectograms_: dictionary
+    def train(self, args: Namespace):
+        best_prec1 = 0
+        train_ds = SleepLearningDataset('samplewise/train', self.label_remapping)
+        val_ds = SleepLearningDataset('samplewise/test', self.label_remapping)
+        print("TRAIN: ", train_ds.dataset_info)
+        print("VAL: ", val_ds.dataset_info)
 
-    """
-    sleep_stages_labels = {0: 'WAKE', 1: "N1", 2: 'N2', 3: 'N3', 4: 'N4',
-                           5: 'REM', 6: 'Artifact'}
+        train_loader = DataLoader(train_ds, batch_size=args.batch_size,
+                                  shuffle=True, **self.kwargs)
 
-    def __init__(self, path: str, epoch_length: int, verbose = False):
-        self.path = path
-        self.label = None
-        self.psgs = None
-        self.spectograms_ = {}
-        self.hypnogram = None
-        self.sampling_rate_ = None#sampling_rate
-        self.epoch_length = epoch_length #epoch_size
-        self.window = None#self.sampling_rate_ * 2
-        self.stride =  None#self.sampling_rate_
+        val_loader = DataLoader(val_ds, batch_size=args.test_batch_size,
+                                shuffle=False, **self.kwargs)
 
+        class_weights = torch.from_numpy(train_ds.weights).float() \
+            if not args.no_weight_loss \
+            else torch.from_numpy(np.ones(train_ds.weights.shape)).float()
+        print("train class weights: ", class_weights)
+        model = Net(
+            num_classes=len(train_ds.dataset_info['class_distribution'].keys()))
 
-    def get_spectrograms(self, channel: str, window: int, stride: int) -> Tuple[
-        np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Compute the spectogram for a specific channel and for every epoch and
-        return a tuple of (frequencies,times,[spectrograms]) where spectrograms
-        is a numpy array containing a spectrogram for every epoch
-        :param channel: channel key as stored in self.psgs
-        :param window: window size of FFT
-        :param stride: for overlapping windows
-        :return: frequencies [fs/2+1], times [epoch size*fs/stride],
-        spectrogram (magnitudes) [total epochs, fs/2+1, epoch size*fs/stride ]
-        """
-        if channel in self.spectograms_:
-            return self.spectograms_[channel]
-        f = t = 0
-        Sxxs = []
+        # define loss function (criterion) and optimizer
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-        # reshape to [num epochs, samples per epoch]
-        psgs = self.psgs[channel].reshape(
-            (-1, self.sampling_rate_ * self.epoch_length))
+        # optionally resume from a checkpoint
+        if args.resume:
+            if os.path.isfile(root_dir + args.resume):
+                print(
+                    "=> loading checkpoint '{}'".format(root_dir + args.resume))
+                checkpoint = torch.load(root_dir + args.resume,
+                                        map_location=self.remap_storage)
+                args.start_epoch = checkpoint['epoch']
+                best_prec1 = checkpoint['best_prec1']
+                model.load_state_dict(checkpoint['state_dict'])
+                optimizer.load_state_dict(checkpoint['optimizer'])
+                print("=> loaded checkpoint '{}' (epoch {}), Prec@1: {}"
+                      .format(args.resume, checkpoint['epoch'],
+                              checkpoint['best_prec1']))
+            else:
+                print("=> no checkpoint found at '{}'".format(
+                    root_dir + args.resume))
 
-        padding = window // 2 - stride // 2
-        psgs = np.pad(psgs, pad_width=((0, 0), (padding, padding)), mode='edge')
+        if self.cuda:
+            model.cuda()
+            class_weights = class_weights.cuda()
+            criterion.cuda()
 
-        for psg in psgs:
-            psg_clean = psg
-            f, t, Sxx = signal.spectrogram(psg_clean, fs=self.sampling_rate_,
-                                           nperseg=window,
-                                           noverlap=window - stride,
-                                           scaling='density', mode='magnitude')
-            Sxxs.append(Sxx)
-        self.spectograms_[channel] = (f, t, np.array(Sxxs))
-        return self.spectograms_[channel]
+        for epoch in range(1, args.epochs + 1):
+            train_epoch(train_loader, model, criterion, optimizer, epoch,
+                        self.cuda, args.log_interval)
+            prec1, _ = validation_epoch(val_loader, model, criterion, self.cuda)
 
-    def get_psds(self, channel: str, window: int, stride: int) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Compute the power spectral densities for a specific channel and for
-        every epoch.
-        :param channel: channel key as stored in self.psgs
-        :return: frequencies [fs/2+1], psds [numEpochs, fs/2+1]
-        """
-        pxxs = []
+            # remember best prec@1 and save checkpoint
+            is_best = prec1 > best_prec1
+            best_prec1 = max(prec1, best_prec1)
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'state_dict': model.state_dict(),
+                'best_prec1': best_prec1,
+                'optimizer': optimizer.state_dict(),
+            }, is_best)
 
-        # reshape to [num epochs, samples per epoch]
-        psgs = self.psgs[channel].reshape(
-            (-1, self.sampling_rate_ * self.epoch_length))
+    def predict(self, subject: Subject):
+        tmp_foldr = 'ZZ_tmp'
+        outdir = '../data/processed/' + tmp_foldr + '/'
+        if os.path.exists(outdir):
+            shutil.rmtree(outdir)
 
-        padding = window // 2 - stride // 2
-        psgs = np.pad(psgs, pad_width=((0, 0), (padding, padding)), mode='edge')
-        f = 0
-        for psg in psgs:
-            f, pxx = signal.welch(psg, fs=self.sampling_rate_,
-                                  nperseg=window,
-                                  noverlap=window - stride,
-                                  scaling='density')
-            pxxs.append(pxx)
-        return f, np.array(pxxs)
+        SleepLearning.create_dataset([subject], 4, feats, tmp_foldr)
+        val_ds = SleepLearningDataset(tmp_foldr, self.label_remapping)
+
+        val_loader = DataLoader(val_ds, batch_size=200,
+                                shuffle=False, **self.kwargs)
+        model = Net(
+            num_classes=len(val_ds.dataset_info['class_distribution'].keys()))
+        class_weights = torch.from_numpy(np.ones(val_ds.weights.shape)).float()
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+
+        if self.cuda:
+            model.cuda()
+            class_weights.cuda()
+            criterion.cuda()
+
+        checkpoint = torch.load(root_dir + '/models/model_best.pth.tar',
+                                map_location=self.remap_storage)
+        model.load_state_dict(checkpoint['state_dict'])
+
+        _, prediction = validation_epoch(val_loader, model, criterion, self.cuda)
+        return prediction.data.cpu().numpy().astype(int)
+
+    @staticmethod
+    def create_dataset(subjects: List[Subject], neighbors: int,
+                       feature_union: FeatureUnion, output_foldr: str):
+        assert (neighbors % 2 == 0)
+        class_distribution = np.zeros(
+            len(Subject.sleep_stages_labels.keys()))
+        subject_labels = []
+        feature_matrix = 0  # initialize
+        outdir = '../data/processed/' + output_foldr + '/'
+        if not os.path.exists(outdir):
+            os.makedirs(outdir)
+            for subject in subjects:
+                subject_labels.append(subject.label)
+                samples_per_epoch = subject.epoch_length * subject.sampling_rate_
+                num_epochs = len(subject.hypnogram)
+                padded_channels = {}
+                psgs_reshaped = {}
+                # pad all channels with zeros
+                for k, psgs in subject.psgs.items():
+                    psgs1 = psgs.reshape(
+                        (-1, subject.sampling_rate_ * subject.epoch_length))
+                    psgs_reshaped[k] = psgs1
+                    padded_channels[k] = np.pad(psgs, (
+                            neighbors // 2) * samples_per_epoch,
+                                                mode='constant',
+                                                constant_values=0)
+                # [num_epochs X num_channels X freq_domain X time_domain]
+                feature_matrix = feature_union.fit_transform(psgs_reshaped)
+                # pad with zeros before and after (additional '#neighbors' epochs)
+                feature_matrix = np.pad(feature_matrix, (
+                (neighbors // 2, neighbors // 2), (0, 0), (0, 0), (0, 0)),
+                                        mode='constant')
+                # create samples with neighbors
+                feature_matrix = np.array([np.concatenate(
+                    feature_matrix[i - neighbors // 2:i + neighbors // 2 + 1],
+                    axis=2) for i
+                    in range(neighbors // 2, num_epochs + neighbors // 2)])
+
+                for e, (sample, label_int) in enumerate(
+                        zip(feature_matrix, subject.hypnogram)):
+                    class_distribution[label_int] += 1
+                    label = Subject.sleep_stages_labels[label_int]
+                    id = subject.label + '_epoch_' + '{0:0>5}'.format(
+                        e) + '_' + str(neighbors) + 'N_' + label
+                    sample = {'id': id, 'x': sample, 'y': label_int}
+                    np.savez(outdir + sample['id'], x=sample['x'],
+                             y=sample['y'])
+
+            dataset_info = {}
+            class_distribution_dict = {}
+            for i in range(len(class_distribution)):
+                class_distribution_dict[Subject.sleep_stages_labels[i]] = int(
+                    class_distribution[i])
+            dataset_info['subjects'] = subject_labels
+            dataset_info['class_distribution'] = class_distribution_dict
+            dataset_info['input_shape'] = feature_matrix[0].shape
+            j = json.dumps(dataset_info, indent=4)
+            f = open(outdir + 'dataset_info.json', 'w')
+            print(j, file=f)
+            f.close()
+        else:
+            raise ValueError('ERROR: the given dataset folder already exists!')

@@ -1,162 +1,28 @@
 from typing import List, Tuple
-
+import shutil
+import time
+import numpy as np
+import os
+import json
+import sys
+import argparse
+import torch
+from torch.utils.data import DataLoader
+from torch.autograd import Variable
+import torch.nn.functional as F
+import os
 import torch
 from sklearn.pipeline import FeatureUnion
 from scipy import signal
 from sklearn.base import BaseEstimator, TransformerMixin
-from sleeplearning.lib.base import SleepLearning
-import numpy as np
-import os
-import json
+from torch.utils.data import DataLoader
+
+root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
+sys.path.insert(0, root_dir)
+from sleeplearning.lib.loaders.subject import Subject
 
 
-class TwoDScaler(BaseEstimator, TransformerMixin):
-    """
-        Zero mean and unit variance scaler
-    """
-
-    def __init__(self):
-        pass
-
-    def fit(self, x, y=None):
-        return self
-
-    def transform(self, x):
-        norm = (x - np.mean(x, axis=(2,3), keepdims=True) ) /  (np.std(x, axis=(2,3), keepdims=True)+1e-4)
-        return norm
-
-
-class Spectrogram(BaseEstimator, TransformerMixin):
-    """
-    Computes the spectrogram of specific channel
-    """
-    def __init__(self, channel: str, sampling_rate: int, window: int, stride: int):
-        self.channel = channel
-        self.sampling_rate = sampling_rate
-        self.window = window
-        self.stride = stride
-
-    def fit(self, x, y=None):
-        return self
-
-    def transform(self, x):
-        psg = x[self.channel]
-        padding = self.window // 2 - self.stride // 2
-        psg = np.pad(psg, pad_width=((0, 0), (padding, padding)), mode='edge')
-        f, t, sxx = signal.spectrogram(psg, fs=self.sampling_rate,
-                                       nperseg=self.window,
-                                       noverlap=self.window - self.stride,
-                                       scaling='density', mode='psd')
-        sxx = sxx[:, np.newaxis, : ,:]
-        return sxx
-
-
-class PowerSpectralDensityMean(BaseEstimator, TransformerMixin):
-    """
-    Computes the mean power spectral density from a spectrogram and repeats the
-     values to 'output_dim'
-    """
-    def __init__(self, output_dim: int):
-        self.output_dim = output_dim
-
-    def fit(self, x, y=None):
-        return self
-
-    def transform(self, x):
-        psd = np.mean(x, axis=2, keepdims=True)
-        rep = np.repeat(psd, self.output_dim, axis=2)
-        return rep
-
-
-class PowerSpectralDensitySum(BaseEstimator, TransformerMixin):
-    """
-    Computes the sum power spectral density from a spectrogram and repeats the
-     values to 'output_dim'
-    """
-    def __init__(self, output_dim: int):
-        self.output_dim = output_dim
-
-    def fit(self, x, y=None):
-        return self
-
-    def transform(self, x):
-        psd = np.sum(x, axis=2, keepdims=True)
-        rep = np.repeat(psd, self.output_dim, axis=2)
-        return rep
-
-
-class CutFrequencies(BaseEstimator, TransformerMixin):
-    """
-    Cuts out the spectrogram between lower and upper frequency
-    """
-    def __init__(self, window: int, sampling_rate: int, lower: float, upper: float):
-        self.f = np.fft.rfftfreq(window, 1.0 / sampling_rate)
-        self.lower = lower
-        self.upper = upper
-
-    def fit(self, x, y=None):
-        return self
-
-    def transform(self, x):
-        cut = x[:, :, np.logical_and(self.f >= self.lower, self.f <= self.upper), :]
-        return cut
-
-
-def create_dataset(subjects: List[SleepLearning], neighbors: int, feature_union: FeatureUnion, output_foldr: str):
-    assert(neighbors % 2 == 0)
-    class_distribution = np.zeros(
-        len(SleepLearning.sleep_stages_labels.keys()))
-    subject_labels = []
-    feature_matrix  = 0 # initialize
-    outdir = '../data/processed/' + output_foldr + '/'
-    if not os.path.exists(outdir):
-        os.makedirs(outdir)
-        for subject in subjects:
-            subject_labels.append(subject.label)
-            samples_per_epoch = subject.epoch_length * subject.sampling_rate_
-            num_epochs = len(subject.hypnogram)
-            padded_channels = {}
-            psgs_reshaped = {}
-            # pad all channels with zeros
-            for k, psgs in subject.psgs.items():
-                psgs1 = psgs.reshape(
-                    (-1, subject.sampling_rate_ * subject.epoch_length))
-                psgs_reshaped[k] = psgs1
-                padded_channels[k] = np.pad(psgs, (
-                        neighbors // 2) * samples_per_epoch,
-                                            mode='constant',
-                                            constant_values=0)
-            # [num_epochs X num_channels X freq_domain X time_domain]
-            feature_matrix = feature_union.fit_transform(psgs_reshaped)
-            # pad with zeros before and after (additional '#neighbors' epochs)
-            feature_matrix = np.pad(feature_matrix, ((neighbors//2, neighbors//2), (0, 0), (0, 0), (0, 0)), mode='constant')
-            # create samples with neighbors
-            feature_matrix = np.array([np.concatenate(
-                feature_matrix[i - neighbors // 2:i + neighbors // 2 + 1], axis=2) for i
-                      in range(neighbors // 2, num_epochs + neighbors // 2)])
-
-            for e, (sample, label_int) in enumerate(zip(feature_matrix, subject.hypnogram)):
-                class_distribution[label_int] += 1
-                label = SleepLearning.sleep_stages_labels[label_int]
-                id = subject.label + '_epoch_' + '{0:0>5}'.format(
-                    e) + '_' + str(neighbors) + 'N_' + label
-                sample = {'id': id, 'x': sample, 'y': label_int}
-                np.savez(outdir + sample['id'], x=sample['x'], y=sample['y'])
-
-        dataset_info = {}
-        class_distribution_dict = {}
-        for i in range(len(class_distribution)):
-            class_distribution_dict[SleepLearning.sleep_stages_labels[i]] = int(
-                class_distribution[i])
-        dataset_info['subjects'] = subject_labels
-        dataset_info['class_distribution'] = class_distribution_dict
-        dataset_info['input_shape'] = feature_matrix[0].shape
-        j = json.dumps(dataset_info, indent=4)
-        f = open(outdir + 'dataset_info.json', 'w')
-        print(j, file=f)
-        f.close()
-    else:
-           raise ValueError('ERROR: the given dataset folder already exists!')
+from sleeplearning.lib.model import Net
 
 
 class SleepLearningDataset(object):
@@ -193,7 +59,7 @@ class SleepLearningDataset(object):
         sample = np.load(self.dir + self.X[index])
 
         x = sample['x']
-        y_str = SleepLearning.sleep_stages_labels[int(sample['y'])]
+        y_str = Subject.sleep_stages_labels[int(sample['y'])]
         y_str_remapped = self.class_remapping[y_str]
         y_ = int(self.class_int_mapping[y_str_remapped])
 
@@ -206,3 +72,143 @@ class SleepLearningDataset(object):
 
     def __len__(self):
         return len(self.X)
+
+
+def train_epoch(train_loader: DataLoader, model: Net, criterion, optimizer,
+                epoch, cuda, log_interval):
+    model.train()
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top2 = AverageMeter()
+
+    end = time.time()
+    for batch_idx, (data, target) in enumerate(train_loader):
+        if cuda:
+            data, target = data.cuda(), target.cuda()
+        data, target = Variable(data).float(), Variable(target).long()
+
+        # compute output
+        output = model(data)
+        loss = criterion(output, target)
+
+        # measure accuracy and record loss
+        (prec1, prec2), _ = accuracy(output, target, topk=(1, 2))
+        losses.update(loss.data[0], data.size(0))
+        top1.update(prec1[0], data.size(0))
+        top2.update(prec2[0], data.size(0))
+
+        # compute gradient and do Adam step
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
+
+        if batch_idx % log_interval == 0:
+            print('Epoch: [{0}]x[{1}/{2}]\t'
+                 'Time {batch_time.val:.1f} ({batch_time.avg:.1f})\t'
+                  'Loss {loss.val:.1f} ({loss.avg:.1f})\t'
+                  'Prec@1 {top1.val:.2f} ({top1.avg:.2f})\t'
+                  'Prec@2 {top2.val:.2f} ({top2.avg:.2f})'.format(
+                epoch, batch_idx, len(train_loader), batch_time=batch_time,
+                loss=losses, top1=top1, top2=top2))
+
+
+def validation_epoch(val_loader: DataLoader, model: Net, criterion, cuda: bool) \
+        -> Tuple[float, np.array]:
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top2 = AverageMeter()
+    prediction = np.array([])
+    model.eval()
+    end = time.time()
+    predictions = []
+    for data, target in val_loader:
+        if cuda:
+            data, target = data.cuda(), target.cuda()
+        data, target = Variable(data, volatile=True).float(), Variable(
+            target).long()
+
+        # compute output
+        output = model(data)
+        loss = criterion(output, target)
+
+        # measure accuracy and record loss
+        (prec1, prec2), prediction = accuracy(output, target, topk=(1, 2))
+        predictions.append(prediction)
+        losses.update(loss.data[0], data.size(0))
+        top1.update(prec1[0], data.size(0))
+        top2.update(prec2[0], data.size(0))
+
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
+
+    print('Test:  [{0}/{0}]\t\t'
+          'Time ({batch_time.avg:.1f})\t'
+          'Loss ({loss.avg:.1f})\t'
+          'Prec@1 ({top1.avg:.2f})\t\t'
+          'Prec@2 ({top2.avg:.2f})'.format(
+        len(val_loader), batch_time=batch_time,
+        loss=losses, top1=top1, top2=top2))
+    predictions = torch.cat(predictions)
+    return top1.avg, predictions
+
+
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+
+def accuracy(output, target, topk=(1,)) -> Tuple[List[List[float]], torch.autograd.Variable]:
+    """Computes the precision@k for the specified values of k"""
+    maxk = max(topk)
+    batch_size = target.size(0)
+
+    _, pred = output.topk(maxk, 1, True, True)
+    pred = pred.t()
+    correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+    res = []
+    for k in topk:
+        correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+        # TODO: keep it as torch Variable and only convert for output if needed
+        res.append((correct_k.mul_(100.0 / batch_size)).data.cpu().numpy())
+    return res, pred[0]
+
+
+def test(test_loader: DataLoader, model: Net, cuda) -> np.array:
+    model.eval()
+    prediction = np.array([])
+    for data, target in test_loader:
+        if cuda:
+            data, target = data.cuda(), target.cuda()
+        data, target = Variable(data, volatile=True).float(), Variable(target).long()
+        # compute output
+        output = model(data)
+        _, pred = output.topk(1, 1, True, True)
+        prediction = np.append(prediction, pred.data.cpu().numpy())
+    return prediction.astype(int)
+
+
+def save_checkpoint(state, is_best, filename=root_dir + '/models/checkpoint.pth.tar'):
+    torch.save(state, filename)
+    if is_best:
+        shutil.copyfile(filename, root_dir+ '/models/model_best.pth.tar')
