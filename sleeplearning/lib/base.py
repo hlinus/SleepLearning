@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from sklearn.pipeline import FeatureUnion
 from torch.utils.data import DataLoader
+
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 from sleeplearning.lib.loaders.subject import Subject
@@ -33,8 +34,9 @@ class SleepLearning(object):
         four_label = {'N1': 'NREM', 'N2': 'NREM', 'N3': 'NREM', 'N4': 'NREM',
                       'WAKE': 'WAKE', 'REM': 'REM', 'Artifact': 'Artifact'}
 
-        self.label_remapping = {'WAKE': 'WAKE', 'N1': 'N1', 'N2': 'N2', 'N3': 'N3',
-                     'N4': 'WAKE', 'REM': 'REM', 'Artifact': 'WAKE'}
+        self.label_remapping = {'WAKE': 'WAKE', 'N1': 'N1', 'N2': 'N2',
+                                'N3': 'N3',
+                                'N4': 'WAKE', 'REM': 'REM', 'Artifact': 'WAKE'}
 
     def train(self, args: Namespace):
         best_prec1 = 0
@@ -61,7 +63,7 @@ class SleepLearning(object):
 
         # define loss function (criterion) and optimizer
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
-        #criterion = torch.nn.CrossEntropyLoss()
+        # criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
         # optionally resume from a checkpoint
@@ -127,7 +129,8 @@ class SleepLearning(object):
                                 map_location=self.remap_storage)
         model.load_state_dict(checkpoint['state_dict'])
 
-        _, prediction = validation_epoch(val_loader, model, criterion, self.cuda)
+        _, prediction = validation_epoch(val_loader, model, criterion,
+                                         self.cuda)
         return prediction.data.cpu().numpy().astype(int)
 
     @staticmethod
@@ -161,7 +164,7 @@ class SleepLearning(object):
                 feature_matrix = feature_union.fit_transform(psgs_reshaped)
                 # pad with zeros before and after (additional '#neighbors' epochs)
                 feature_matrix = np.pad(feature_matrix, (
-                (neighbors // 2, neighbors // 2), (0, 0), (0, 0), (0, 0)),
+                    (neighbors // 2, neighbors // 2), (0, 0), (0, 0), (0, 0)),
                                         mode='constant')
                 # create samples with neighbors
                 feature_matrix = np.array([np.concatenate(
