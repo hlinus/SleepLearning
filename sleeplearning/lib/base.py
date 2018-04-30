@@ -34,12 +34,12 @@ class SleepLearning(object):
                       'WAKE': 'WAKE', 'REM': 'REM', 'Artifact': 'Artifact'}
 
         self.label_remapping = {'WAKE': 'WAKE', 'N1': 'N1', 'N2': 'N2', 'N3': 'N3',
-                     'N4': 'Artifact', 'REM': 'REM', 'Artifact': 'Artifact'}
+                     'N4': 'WAKE', 'REM': 'REM', 'Artifact': 'WAKE'}
 
     def train(self, args: Namespace):
         best_prec1 = 0
-        train_ds = SleepLearningDataset('samplewise/train', self.label_remapping)
-        val_ds = SleepLearningDataset('samplewise/test', self.label_remapping)
+        train_ds = SleepLearningDataset('caro-log/train', self.label_remapping)
+        val_ds = SleepLearningDataset('caro-log/test', self.label_remapping)
         print("TRAIN: ", train_ds.dataset_info)
         print("VAL: ", val_ds.dataset_info)
 
@@ -56,8 +56,12 @@ class SleepLearning(object):
         model = Net(
             num_classes=len(train_ds.dataset_info['class_distribution'].keys()))
 
+        # initialize layers with xavier
+        model.weights_init()
+
         # define loss function (criterion) and optimizer
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+        #criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
         # optionally resume from a checkpoint
@@ -104,7 +108,7 @@ class SleepLearning(object):
         if os.path.exists(outdir):
             shutil.rmtree(outdir)
 
-        SleepLearning.create_dataset([subject], 4, feats, tmp_foldr)
+        SleepLearning.create_dataset([subject], 4, feats, True, tmp_foldr)
         val_ds = SleepLearningDataset(tmp_foldr, self.label_remapping)
 
         val_loader = DataLoader(val_ds, batch_size=200,
@@ -128,7 +132,8 @@ class SleepLearning(object):
 
     @staticmethod
     def create_dataset(subjects: List[Subject], neighbors: int,
-                       feature_union: FeatureUnion, output_foldr: str):
+                       feature_union: FeatureUnion, discard_arts: bool,
+                       output_foldr: str):
         assert (neighbors % 2 == 0)
         class_distribution = np.zeros(
             len(Subject.sleep_stages_labels.keys()))
@@ -166,8 +171,10 @@ class SleepLearning(object):
 
                 for e, (sample, label_int) in enumerate(
                         zip(feature_matrix, subject.hypnogram)):
-                    class_distribution[label_int] += 1
                     label = Subject.sleep_stages_labels[label_int]
+                    if discard_arts and label == 'Artifact':
+                        continue
+                    class_distribution[label_int] += 1
                     id = subject.label + '_epoch_' + '{0:0>5}'.format(
                         e) + '_' + str(neighbors) + 'N_' + label
                     sample = {'id': id, 'x': sample, 'y': label_int}

@@ -1,27 +1,16 @@
-from typing import List, Tuple
-import shutil
-import time
-import numpy as np
-import os
 import json
-import sys
-import argparse
-import torch
-from torch.utils.data import DataLoader
-from torch.autograd import Variable
-import torch.nn.functional as F
 import os
+import shutil
+import sys
+import time
+from typing import List, Tuple
+import numpy as np
 import torch
-from sklearn.pipeline import FeatureUnion
-from scipy import signal
-from sklearn.base import BaseEstimator, TransformerMixin
+from torch.autograd import Variable
 from torch.utils.data import DataLoader
-
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 from sleeplearning.lib.loaders.subject import Subject
-
-
 from sleeplearning.lib.model import Net
 
 
