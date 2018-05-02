@@ -7,7 +7,7 @@ class Net(nn.Module):
     def __init__(self, num_classes: int):
         super(Net, self).__init__()
         self.conv1 = nn.Conv2d(4, 32, kernel_size=3)
-        self.fc1 = nn.Linear(14080, 1000)
+        self.fc1 = nn.Linear(6912, 1000)
         self.fc2 = nn.Linear(1000, num_classes)
 
     def weights_init(m):
@@ -16,7 +16,7 @@ class Net(nn.Module):
             xavier_normal(m.bias.data)
 
     def forward(self, x):
-        x = F.max_pool2d(x, (2, 3))
+        x = F.max_pool2d(x, (2, 2))
         x = self.conv1(x)
         x = F.max_pool2d(x, (2, 2))
         x = x.view(x.size(0), -1)  # Flatten layer

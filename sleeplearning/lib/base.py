@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from sklearn.pipeline import FeatureUnion
 from torch.utils.data import DataLoader
-
+from scipy.signal import resample
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 from sleeplearning.lib.loaders.subject import Subject
@@ -40,8 +40,8 @@ class SleepLearning(object):
 
     def train(self, args: Namespace):
         best_prec1 = 0
-        train_ds = SleepLearningDataset('caro-log/train', self.label_remapping)
-        val_ds = SleepLearningDataset('caro-log/test', self.label_remapping)
+        train_ds = SleepLearningDataset('caro-fs100/train', self.label_remapping)
+        val_ds = SleepLearningDataset('caro-fs100/test', self.label_remapping)
         print("TRAIN: ", train_ds.dataset_info)
         print("VAL: ", val_ds.dataset_info)
 
@@ -148,6 +148,7 @@ class SleepLearning(object):
             for subject in subjects:
                 subject_labels.append(subject.label)
                 samples_per_epoch = subject.epoch_length * subject.sampling_rate_
+                # TODO: support subjects with no hypnogram
                 num_epochs = len(subject.hypnogram)
                 padded_channels = {}
                 psgs_reshaped = {}
@@ -155,6 +156,9 @@ class SleepLearning(object):
                 for k, psgs in subject.psgs.items():
                     psgs1 = psgs.reshape(
                         (-1, subject.sampling_rate_ * subject.epoch_length))
+                    if subject.sampling_rate_ > 100:
+                        # downsample to 100 Hz
+                        psgs1 = resample(psgs1, subject.epoch_length * 100, axis=1)
                     psgs_reshaped[k] = psgs1
                     padded_channels[k] = np.pad(psgs, (
                             neighbors // 2) * samples_per_epoch,

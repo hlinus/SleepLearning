@@ -122,38 +122,38 @@ class LogTransform(BaseEstimator, TransformerMixin):
 
 eeg_spectrogram = Pipeline([
     ('spectrogram',
-     Spectrogram(channel='EEG', sampling_rate=250, window=500, stride=100)),
-    ('cutter', CutFrequencies(window=500, sampling_rate=250, lower=0, upper=25)),
+     Spectrogram(channel='EEG', sampling_rate=100, window=156, stride=100)),
+    ('cutter', CutFrequencies(window=156, sampling_rate=100, lower=0, upper=25)),
     ('log', LogTransform()),
     ('standard', TwoDScaler())
 ])
 
 emg_psd = Pipeline([
     ('spectrogram',
-     Spectrogram(channel='EMG', sampling_rate=250, window=500, stride=100)),
+     Spectrogram(channel='EMG', sampling_rate=100, window=156, stride=100)),
     (
-    'cutter', CutFrequencies(window=500, sampling_rate=250, lower=0, upper=60)),
-    ('psd', PowerSpectralDensityMean(output_dim=51)),
+    'cutter', CutFrequencies(window=156, sampling_rate=100, lower=0, upper=60)),
+    ('psd', PowerSpectralDensityMean(output_dim=40)),
     ('log', LogTransform()),
     ('standard', TwoDScaler())
 ])
 
 eogl = Pipeline([
     ('spectrogram',
-     Spectrogram(channel='EOGL', sampling_rate=250, window=500, stride=100)),
+     Spectrogram(channel='EOGL', sampling_rate=100, window=156, stride=100)),
     (
-    'cutter', CutFrequencies(window=500, sampling_rate=250, lower=0, upper=60)),
-    ('psd', PowerSpectralDensityMean(output_dim=51)),
+    'cutter', CutFrequencies(window=156, sampling_rate=100, lower=0, upper=60)),
+    ('psd', PowerSpectralDensityMean(output_dim=40)),
     ('log', LogTransform()),
     ('standard', TwoDScaler())
 ])
 
 eogr = Pipeline([
     ('spectrogram',
-     Spectrogram(channel='EOGR', sampling_rate=250, window=500, stride=100)),
+     Spectrogram(channel='EOGR', sampling_rate=100, window=156, stride=100)),
     (
-    'cutter', CutFrequencies(window=500, sampling_rate=250, lower=0, upper=60)),
-    ('psd', PowerSpectralDensityMean(output_dim=51)),
+    'cutter', CutFrequencies(window=156, sampling_rate=100, lower=0, upper=60)),
+    ('psd', PowerSpectralDensityMean(output_dim=40)),
     ('log', LogTransform()),
     ('standard', TwoDScaler())
 ])
