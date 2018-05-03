@@ -6,7 +6,7 @@ from argparse import Namespace
 from typing import List
 import numpy as np
 import torch
-from sklearn.pipeline import FeatureUnion
+
 from torch.utils.data import DataLoader
 from scipy.signal import resample
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
@@ -31,28 +31,30 @@ class SleepLearning(object):
         torch.manual_seed(1)
         self.kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
 
-        four_label = {'N1': 'NREM', 'N2': 'NREM', 'N3': 'NREM', 'N4': 'NREM',
-                      'WAKE': 'WAKE', 'REM': 'REM', 'Artifact': 'Artifact'}
+        three_label = {'N1': 'NREM', 'N2': 'NREM', 'N3': 'NREM', 'N4': 'NREM',
+                      'WAKE': 'WAKE', 'REM': 'REM', 'Artifact': 'WAKE'}
 
-        self.label_remapping = {'WAKE': 'WAKE', 'N1': 'N1', 'N2': 'N2',
-                                'N3': 'N3',
-                                'N4': 'WAKE', 'REM': 'REM', 'Artifact': 'WAKE'}
+        five_label = {'WAKE': 'WAKE', 'N1': 'N1', 'N2': 'N2', 'N3': 'N3',
+                      'N4': 'WAKE', 'REM': 'REM', 'Artifact': 'WAKE'}
+        self.label_remapping = five_label
 
-    def train(self, args: Namespace):
+    def train(self, ts: dict):
         best_prec1 = 0
-        train_ds = SleepLearningDataset('caro-fs100/train', self.label_remapping)
-        val_ds = SleepLearningDataset('caro-fs100/test', self.label_remapping)
+        train_dir = os.path.join('newDS', 'train')
+        test_dir = os.path.join('newDS', 'test')
+        train_ds = SleepLearningDataset(train_dir, self.label_remapping, feats)
+        test_ds = SleepLearningDataset(test_dir, self.label_remapping, feats)
         print("TRAIN: ", train_ds.dataset_info)
-        print("VAL: ", val_ds.dataset_info)
+        print("TEST: ", test_ds.dataset_info)
 
-        train_loader = DataLoader(train_ds, batch_size=args.batch_size,
+        train_loader = DataLoader(train_ds, batch_size=ts['batch-size'],
                                   shuffle=True, **self.kwargs)
 
-        val_loader = DataLoader(val_ds, batch_size=args.test_batch_size,
+        val_loader = DataLoader(test_ds, batch_size=ts['test-batch-size'],
                                 shuffle=False, **self.kwargs)
 
         class_weights = torch.from_numpy(train_ds.weights).float() \
-            if not args.no_weight_loss \
+            if ts['weight-loss'] \
             else torch.from_numpy(np.ones(train_ds.weights.shape)).float()
         print("train class weights: ", class_weights)
         model = Net(
@@ -64,34 +66,34 @@ class SleepLearning(object):
         # define loss function (criterion) and optimizer
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
         # criterion = torch.nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+        optimizer = torch.optim.Adam(model.parameters(), lr=ts['lr'])
 
         # optionally resume from a checkpoint
-        if args.resume:
-            if os.path.isfile(root_dir + args.resume):
+        if ts['resume'] != '':
+            if os.path.isfile(root_dir + ts['resume']):
                 print(
-                    "=> loading checkpoint '{}'".format(root_dir + args.resume))
-                checkpoint = torch.load(root_dir + args.resume,
+                    "=> loading checkpoint '{}'".format(root_dir + ts['resume']))
+                checkpoint = torch.load(root_dir + ts['resume'],
                                         map_location=self.remap_storage)
-                args.start_epoch = checkpoint['epoch']
+                #args.start_epoch = checkpoint['epoch']
                 best_prec1 = checkpoint['best_prec1']
                 model.load_state_dict(checkpoint['state_dict'])
                 optimizer.load_state_dict(checkpoint['optimizer'])
                 print("=> loaded checkpoint '{}' (epoch {}), Prec@1: {}"
-                      .format(args.resume, checkpoint['epoch'],
+                      .format(ts['resume'], checkpoint['epoch'],
                               checkpoint['best_prec1']))
             else:
                 print("=> no checkpoint found at '{}'".format(
-                    root_dir + args.resume))
+                    root_dir + ts['resume']))
 
-        if self.cuda:
+        if ts['cuda']:
             model.cuda()
             class_weights = class_weights.cuda()
             criterion.cuda()
 
-        for epoch in range(1, args.epochs + 1):
+        for epoch in range(1, ts['epochs'] + 1):
             train_epoch(train_loader, model, criterion, optimizer, epoch,
-                        self.cuda, args.log_interval)
+                        self.cuda, ts['log-interval'])
             prec1, _ = validation_epoch(val_loader, model, criterion, self.cuda)
 
             # remember best prec@1 and save checkpoint
@@ -104,14 +106,14 @@ class SleepLearning(object):
                 'optimizer': optimizer.state_dict(),
             }, is_best)
 
-    def predict(self, subject: Subject):
+    def predict(self, subject: Subject, cuda = True):
         tmp_foldr = 'ZZ_tmp'
         outdir = '../data/processed/' + tmp_foldr + '/'
         if os.path.exists(outdir):
             shutil.rmtree(outdir)
 
-        SleepLearning.create_dataset([subject], 4, feats, True, tmp_foldr)
-        val_ds = SleepLearningDataset(tmp_foldr, self.label_remapping)
+        SleepLearning.create_dataset([subject], 4, tmp_foldr)
+        val_ds = SleepLearningDataset(tmp_foldr, self.label_remapping, feats)
 
         val_loader = DataLoader(val_ds, batch_size=200,
                                 shuffle=False, **self.kwargs)
@@ -120,37 +122,31 @@ class SleepLearning(object):
         class_weights = torch.from_numpy(np.ones(val_ds.weights.shape)).float()
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
-        if self.cuda:
+        if cuda and torch.cuda.is_available():
             model.cuda()
             class_weights.cuda()
             criterion.cuda()
+        else:
+            cuda = False
 
         checkpoint = torch.load(root_dir + '/models/model_best.pth.tar',
                                 map_location=self.remap_storage)
         model.load_state_dict(checkpoint['state_dict'])
 
         _, prediction = validation_epoch(val_loader, model, criterion,
-                                         self.cuda)
+                                         cuda)
         return prediction.data.cpu().numpy().astype(int)
 
     @staticmethod
     def create_dataset(subjects: List[Subject], neighbors: int,
-                       feature_union: FeatureUnion, discard_arts: bool,
                        output_foldr: str):
         assert (neighbors % 2 == 0)
-        class_distribution = np.zeros(
-            len(Subject.sleep_stages_labels.keys()))
         subject_labels = []
-        feature_matrix = 0  # initialize
         outdir = '../data/processed/' + output_foldr + '/'
         if not os.path.exists(outdir):
             os.makedirs(outdir)
             for subject in subjects:
                 subject_labels.append(subject.label)
-                samples_per_epoch = subject.epoch_length * subject.sampling_rate_
-                # TODO: support subjects with no hypnogram
-                num_epochs = len(subject.hypnogram)
-                padded_channels = {}
                 psgs_reshaped = {}
                 # pad all channels with zeros
                 for k, psgs in subject.psgs.items():
@@ -158,47 +154,10 @@ class SleepLearning(object):
                         (-1, subject.sampling_rate_ * subject.epoch_length))
                     if subject.sampling_rate_ > 100:
                         # downsample to 100 Hz
-                        psgs1 = resample(psgs1, subject.epoch_length * 100, axis=1)
+                        psgs1 = resample(psgs1, subject.epoch_length * 100,
+                                         axis=1)
                     psgs_reshaped[k] = psgs1
-                    padded_channels[k] = np.pad(psgs, (
-                            neighbors // 2) * samples_per_epoch,
-                                                mode='constant',
-                                                constant_values=0)
-                # [num_epochs X num_channels X freq_domain X time_domain]
-                feature_matrix = feature_union.fit_transform(psgs_reshaped)
-                # pad with zeros before and after (additional '#neighbors' epochs)
-                feature_matrix = np.pad(feature_matrix, (
-                    (neighbors // 2, neighbors // 2), (0, 0), (0, 0), (0, 0)),
-                                        mode='constant')
-                # create samples with neighbors
-                feature_matrix = np.array([np.concatenate(
-                    feature_matrix[i - neighbors // 2:i + neighbors // 2 + 1],
-                    axis=2) for i
-                    in range(neighbors // 2, num_epochs + neighbors // 2)])
-
-                for e, (sample, label_int) in enumerate(
-                        zip(feature_matrix, subject.hypnogram)):
-                    label = Subject.sleep_stages_labels[label_int]
-                    if discard_arts and label == 'Artifact':
-                        continue
-                    class_distribution[label_int] += 1
-                    id = subject.label + '_epoch_' + '{0:0>5}'.format(
-                        e) + '_' + str(neighbors) + 'N_' + label
-                    sample = {'id': id, 'x': sample, 'y': label_int}
-                    np.savez(outdir + sample['id'], x=sample['x'],
-                             y=sample['y'])
-
-            dataset_info = {}
-            class_distribution_dict = {}
-            for i in range(len(class_distribution)):
-                class_distribution_dict[Subject.sleep_stages_labels[i]] = int(
-                    class_distribution[i])
-            dataset_info['subjects'] = subject_labels
-            dataset_info['class_distribution'] = class_distribution_dict
-            dataset_info['input_shape'] = feature_matrix[0].shape
-            j = json.dumps(dataset_info, indent=4)
-            f = open(outdir + 'dataset_info.json', 'w')
-            print(j, file=f)
-            f.close()
+                np.savez(outdir + subject.label, subject_label=subject.label,
+                         psgs=psgs_reshaped, labels=subject.hypnogram)
         else:
             raise ValueError('ERROR: the given dataset folder already exists!')

@@ -1,32 +1,35 @@
 import sys
-import argparse
 import os
+import torch
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 from sleeplearning.lib.base import SleepLearning
+from sacred.observers import FileStorageObserver
+from sacred import Experiment, Ingredient
 
-# Training settings
-parser = argparse.ArgumentParser(description='PyTorch SleepLearning')
-parser.add_argument('--batch-size', type=int, default=200, metavar='N',
-                    help='input batch size for training (default: 200)')
-parser.add_argument('--test-batch-size', type=int, default=200, metavar='N',
-                    help='input batch size for testing (default: 200)')
-parser.add_argument('--epochs', type=int, default=10, metavar='N',
-                    help='number of epochs to train (default: 10)')
-parser.add_argument('--lr', type=float, default=5 * 1e-5, metavar='LR',
-                    help='learning rate (default: 0.0005)')
-parser.add_argument('--resume', default='',
-                    type=str, metavar='PATH',
-                    help='path to latest checkpoint (default: none)')
-parser.add_argument('--no-cuda', action='store_true', default=False,
-                    help='disables CUDA training')
-parser.add_argument('--no-weight-loss', action='store_true', default=False,
-                    help='disables class weighted loss')
-parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-                    help='how many batches to wait before logging training status')
+ex = Experiment()
+ex.observers.append(FileStorageObserver.create('exp_logs'))
+
+@ex.config
+def cfg():
+    # feature extraction settings
+    neighbors = 4
+
+    # training settings
+    ts = {
+        'batch-size': 32,
+        'test-batch-size': 512,
+        'epochs': 10,
+        'lr': 5*1e-5,
+        'resume': '',
+        'cuda': torch.cuda.is_available(),
+        'weight-loss': False,
+        'log-interval': 50
+    }
 
 
-args = parser.parse_args()
-SleepLearning(not args.no_cuda).train(args)
+@ex.automain
+def main(ts):
+    SleepLearning().train(ts)
 
 

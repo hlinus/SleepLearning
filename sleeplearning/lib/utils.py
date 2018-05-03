@@ -1,4 +1,3 @@
-import json
 import os
 import shutil
 import sys
@@ -17,14 +16,60 @@ from sleeplearning.lib.model import Net
 class SleepLearningDataset(object):
     """Sleep Learning dataset."""
 
-    def __init__(self, foldr: str, class_remapping: dict, transform = None):
-        self.dir = '../data/processed/' + foldr + '/'
-        self.X = [filename for filename in os.listdir(self.dir) if filename.endswith(".npz")]
+    def __init__(self, foldr: str, class_remapping: dict, feature_extractor,
+                 neighbors=4, discard_arts=True, transform=None):
+        dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        self.dir = os.path.join(dir, 'data', 'processed', foldr)
+        #self.dir = 'data/processed/' + foldr + '/'
+        self.X = []
         self.class_remapping = class_remapping
 
         self.transform = transform
-        with open(self.dir +'dataset_info.json') as data_file:
-            self.dataset_info = json.load(data_file)
+        subject_files = [filename for filename in
+                         os.listdir(self.dir) if
+                         filename.endswith(".npz")]
+        class_distribution = np.zeros(
+            len(Subject.sleep_stages_labels.keys()))
+        subject_labels = []
+        for subject_file in subject_files:
+            subject = np.load(os.path.join(self.dir, subject_file))
+            subject_labels.append(subject['subject_label'].item())
+            psgs_reshaped = subject['psgs'].item()
+
+            # [num_epochs X num_channels X freq_domain X time_domain]
+            feature_matrix = feature_extractor.fit_transform(psgs_reshaped)
+            del psgs_reshaped
+            num_epochs = feature_matrix.shape[0]
+            # pad with zeros before and after (additional '#neighbors' epochs)
+            feature_matrix = np.pad(feature_matrix, (
+                (neighbors // 2, neighbors // 2), (0, 0), (0, 0), (0, 0)),
+                                    mode='constant')
+            # create samples with neighbors
+            feature_matrix = np.array([np.concatenate(
+                feature_matrix[i - neighbors // 2:i + neighbors // 2 + 1],
+                axis=2) for i
+                in range(neighbors // 2, num_epochs + neighbors // 2)])
+
+            for e, (sample, label_int) in enumerate(
+                    zip(feature_matrix, subject['labels'])):
+                label = Subject.sleep_stages_labels[label_int]
+                if discard_arts and label == 'Artifact':
+                    continue
+                class_distribution[label_int] += 1
+                id = subject[
+                         'subject_label'].item() + '_epoch_' + '{0:0>5}'.format(
+                    e) + '_' + str(neighbors) + 'N_' + label
+                sample = {'id': id, 'x': sample, 'y': label_int}
+                self.X.append(sample)
+
+        self.dataset_info = {}
+        class_distribution_dict = {}
+        for i in range(len(class_distribution)):
+            class_distribution_dict[Subject.sleep_stages_labels[i]] = int(
+                class_distribution[i])
+        self.dataset_info['subjects'] = subject_labels
+        self.dataset_info['class_distribution'] = class_distribution_dict
+        self.dataset_info['input_shape'] = feature_matrix[0].shape
 
         remapped_distribution = {}
         for k in class_remapping.values():
@@ -45,8 +90,7 @@ class SleepLearningDataset(object):
         self.weights = total_classes/self.weights
 
     def __getitem__(self, index):
-        sample = np.load(self.dir + self.X[index])
-
+        sample = self.X[index]
         x = sample['x']
         y_str = Subject.sleep_stages_labels[int(sample['y'])]
         y_str_remapped = self.class_remapping[y_str]
@@ -54,7 +98,6 @@ class SleepLearningDataset(object):
 
         if self.transform is not None:
             x = self.transform(x)
-
         x = torch.from_numpy(x).double()
 
         return x, y_
@@ -66,6 +109,7 @@ class SleepLearningDataset(object):
 def train_epoch(train_loader: DataLoader, model: Net, criterion, optimizer,
                 epoch, cuda, log_interval):
     model.train()
+    torch.set_grad_enabled(True)
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
@@ -83,7 +127,7 @@ def train_epoch(train_loader: DataLoader, model: Net, criterion, optimizer,
 
         # measure accuracy and record loss
         (prec1, prec2), _ = accuracy(output, target, topk=(1, 2))
-        losses.update(loss.data[0], data.size(0))
+        losses.update(loss.item(), data.size(0))
         top1.update(prec1[0], data.size(0))
         top2.update(prec2[0], data.size(0))
 
@@ -114,12 +158,13 @@ def validation_epoch(val_loader: DataLoader, model: Net, criterion, cuda: bool) 
     top2 = AverageMeter()
     prediction = np.array([])
     model.eval()
+    torch.set_grad_enabled(False)
     end = time.time()
     predictions = []
     for data, target in val_loader:
         if cuda:
             data, target = data.cuda(), target.cuda()
-        data, target = Variable(data, volatile=True).float(), Variable(
+        data, target = Variable(data).float(), Variable(
             target).long()
 
         # compute output
@@ -129,7 +174,7 @@ def validation_epoch(val_loader: DataLoader, model: Net, criterion, cuda: bool) 
         # measure accuracy and record loss
         (prec1, prec2), prediction = accuracy(output, target, topk=(1, 2))
         predictions.append(prediction)
-        losses.update(loss.data[0], data.size(0))
+        losses.update(loss.item(), data.size(0))
         top1.update(prec1[0], data.size(0))
         top2.update(prec2[0], data.size(0))
 
@@ -197,7 +242,7 @@ def test(test_loader: DataLoader, model: Net, cuda) -> np.array:
     return prediction.astype(int)
 
 
-def save_checkpoint(state, is_best, filename=root_dir + '/models/checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, filename='models/checkpoint.pth.tar'):
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, root_dir+ '/models/model_best.pth.tar')
+        shutil.copyfile(filename, 'models/model_best.pth.tar')
