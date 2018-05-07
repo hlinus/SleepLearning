@@ -2,7 +2,6 @@ import json
 import os
 import shutil
 import sys
-from argparse import Namespace
 from typing import List
 import numpy as np
 import torch
@@ -65,7 +64,6 @@ class SleepLearning(object):
 
         # define loss function (criterion) and optimizer
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
-        # criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=ts['lr'])
 
         # optionally resume from a checkpoint
@@ -93,7 +91,7 @@ class SleepLearning(object):
 
         for epoch in range(1, ts['epochs'] + 1):
             train_epoch(train_loader, model, criterion, optimizer, epoch,
-                        self.cuda, ts['log-interval'])
+                        self.cuda)
             prec1, _ = validation_epoch(val_loader, model, criterion, self.cuda)
 
             # remember best prec@1 and save checkpoint
@@ -112,11 +110,15 @@ class SleepLearning(object):
         if os.path.exists(outdir):
             shutil.rmtree(outdir)
 
-        SleepLearning.create_dataset([subject], 4, tmp_foldr)
+        SleepLearning.create_dataset([subject], tmp_foldr)
         val_ds = SleepLearningDataset(tmp_foldr, self.label_remapping, feats)
 
         val_loader = DataLoader(val_ds, batch_size=200,
                                 shuffle=False, **self.kwargs)
+        truth = []
+        for batch, y in val_loader:
+            truth = truth + list(y.numpy())
+
         model = Net(
             num_classes=len(val_ds.dataset_info['class_distribution'].keys()))
         class_weights = torch.from_numpy(np.ones(val_ds.weights.shape)).float()
@@ -132,15 +134,17 @@ class SleepLearning(object):
         checkpoint = torch.load(root_dir + '/models/model_best.pth.tar',
                                 map_location=self.remap_storage)
         model.load_state_dict(checkpoint['state_dict'])
+        model.load_state_dict(checkpoint['state_dict'])
+        print("=> loaded model (epoch {}), Prec@1: {}"
+              .format(checkpoint['epoch'],
+                      checkpoint['best_prec1']))
 
-        _, prediction = validation_epoch(val_loader, model, criterion,
+        acc, prediction = validation_epoch(val_loader, model, criterion,
                                          cuda)
-        return prediction.data.cpu().numpy().astype(int)
+        return prediction.data.cpu().numpy().astype(int), truth, acc
 
     @staticmethod
-    def create_dataset(subjects: List[Subject], neighbors: int,
-                       output_foldr: str):
-        assert (neighbors % 2 == 0)
+    def create_dataset(subjects: List[Subject], output_foldr: str):
         subject_labels = []
         outdir = '../data/processed/' + output_foldr + '/'
         if not os.path.exists(outdir):

@@ -47,6 +47,6 @@ elif args['filetype'] == 'physio':
 # ----------------- Perform classification procedure ------------------------ #
 # --------------------------------------------------------------------------- #
 if subject is not None:
-    pred = SleepLearning(True).predict(subject)
+    pred, _, _ = SleepLearning(True).predict(subject)
     np.savetxt("prediction.csv", pred, delimiter=",", fmt='%i')
     print("Prediction saved as 'prediction.csv'. ")

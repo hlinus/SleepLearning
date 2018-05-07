@@ -18,9 +18,9 @@ class SleepLearningDataset(object):
 
     def __init__(self, foldr: str, class_remapping: dict, feature_extractor,
                  neighbors=4, discard_arts=True, transform=None):
+        assert(neighbors % 2 == 0)
         dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         self.dir = os.path.join(dir, 'data', 'processed', foldr)
-        #self.dir = 'data/processed/' + foldr + '/'
         self.X = []
         self.class_remapping = class_remapping
 
@@ -107,7 +107,7 @@ class SleepLearningDataset(object):
 
 
 def train_epoch(train_loader: DataLoader, model: Net, criterion, optimizer,
-                epoch, cuda, log_interval):
+                epoch, cuda):
     model.train()
     torch.set_grad_enabled(True)
     batch_time = AverageMeter()
@@ -140,14 +140,13 @@ def train_epoch(train_loader: DataLoader, model: Net, criterion, optimizer,
         batch_time.update(time.time() - end)
         end = time.time()
 
-        if batch_idx % log_interval == 0:
-            print('Epoch: [{0}]x[{1}/{2}]\t'
-                 'Time {batch_time.val:.1f} ({batch_time.avg:.1f})\t'
-                  'Loss {loss.val:.1f} ({loss.avg:.1f})\t'
-                  'Prec@1 {top1.val:.2f} ({top1.avg:.2f})\t'
-                  'Prec@2 {top2.val:.2f} ({top2.avg:.2f})'.format(
-                epoch, batch_idx, len(train_loader), batch_time=batch_time,
-                loss=losses, top1=top1, top2=top2))
+    print('Epoch: [{0}]x[{1}/{1}]\t'
+         'Time {batch_time.avg:.1f}\t'
+          'Loss {loss.avg:.1f}\t'
+          'Prec@1 {top1.avg:.2f}\t'
+          'Prec@2 {top2.avg:.2f}'.format(
+        epoch, len(train_loader), batch_time=batch_time,
+        loss=losses, top1=top1, top2=top2))
 
 
 def validation_epoch(val_loader: DataLoader, model: Net, criterion, cuda: bool) \
@@ -183,10 +182,10 @@ def validation_epoch(val_loader: DataLoader, model: Net, criterion, cuda: bool) 
         end = time.time()
 
     print('Test:  [{0}/{0}]\t\t'
-          'Time ({batch_time.avg:.1f})\t'
-          'Loss ({loss.avg:.1f})\t'
-          'Prec@1 ({top1.avg:.2f})\t\t'
-          'Prec@2 ({top2.avg:.2f})'.format(
+          'Time {batch_time.avg:.1f}\t'
+          'Loss {loss.avg:.1f}\t'
+          'Prec@1 {top1.avg:.2f}\t\t'
+          'Prec@2 {top2.avg:.2f}'.format(
         len(val_loader), batch_time=batch_time,
         loss=losses, top1=top1, top2=top2))
     predictions = torch.cat(predictions)
@@ -242,7 +241,7 @@ def test(test_loader: DataLoader, model: Net, cuda) -> np.array:
     return prediction.astype(int)
 
 
-def save_checkpoint(state, is_best, filename='models/checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, filename=root_dir + '/models/checkpoint.pth.tar'):
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, 'models/model_best.pth.tar')
+        shutil.copyfile(filename, root_dir + '/models/model_best.pth.tar')

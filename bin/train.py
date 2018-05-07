@@ -23,8 +23,7 @@ def cfg():
         'lr': 5*1e-5,
         'resume': '',
         'cuda': torch.cuda.is_available(),
-        'weight-loss': False,
-        'log-interval': 50
+        'weight-loss': False
     }
 
 
