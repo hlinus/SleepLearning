@@ -92,7 +92,8 @@ class CutFrequencies(BaseEstimator, TransformerMixin):
 
     def __init__(self, window: int, sampling_rate: int, lower: float,
                  upper: float):
-        self.f = np.fft.rfftfreq(window, 1.0 / sampling_rate)
+        self.window = window
+        self.sampling_rate = sampling_rate
         self.lower = lower
         self.upper = upper
 
@@ -100,8 +101,9 @@ class CutFrequencies(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, x):
+        f = np.fft.rfftfreq(self.window, 1.0 / self.sampling_rate)
         cut = x[:, :,
-              np.logical_and(self.f >= self.lower, self.f <= self.upper), :]
+              np.logical_and(f >= self.lower, f <= self.upper), :]
         return cut
 
 
@@ -118,46 +120,3 @@ class LogTransform(BaseEstimator, TransformerMixin):
 
     def transform(self, x):
         return np.log(x + 1e-4)
-
-
-eeg_spectrogram = Pipeline([
-    ('spectrogram',
-     Spectrogram(channel='EEG', sampling_rate=100, window=156, stride=100)),
-    ('cutter', CutFrequencies(window=156, sampling_rate=100, lower=0, upper=25)),
-    ('log', LogTransform()),
-    ('standard', TwoDScaler())
-])
-
-emg_psd = Pipeline([
-    ('spectrogram',
-     Spectrogram(channel='EMG', sampling_rate=100, window=156, stride=100)),
-    (
-    'cutter', CutFrequencies(window=156, sampling_rate=100, lower=0, upper=60)),
-    ('psd', PowerSpectralDensityMean(output_dim=40)),
-    ('log', LogTransform()),
-    ('standard', TwoDScaler())
-])
-
-eogl = Pipeline([
-    ('spectrogram',
-     Spectrogram(channel='EOGL', sampling_rate=100, window=156, stride=100)),
-    (
-    'cutter', CutFrequencies(window=156, sampling_rate=100, lower=0, upper=60)),
-    ('psd', PowerSpectralDensityMean(output_dim=40)),
-    ('log', LogTransform()),
-    ('standard', TwoDScaler())
-])
-
-eogr = Pipeline([
-    ('spectrogram',
-     Spectrogram(channel='EOGR', sampling_rate=100, window=156, stride=100)),
-    (
-    'cutter', CutFrequencies(window=156, sampling_rate=100, lower=0, upper=60)),
-    ('psd', PowerSpectralDensityMean(output_dim=40)),
-    ('log', LogTransform()),
-    ('standard', TwoDScaler())
-])
-
-feats = FeatureUnion(
-    [('eeg_spectrogram', eeg_spectrogram), ('emg_psd', emg_psd),
-     ('eogl_psd', eogl), ('eogr_psd', eogr)], n_jobs=2)

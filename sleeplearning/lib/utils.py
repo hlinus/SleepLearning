@@ -16,9 +16,17 @@ from sleeplearning.lib.model import Net
 class SleepLearningDataset(object):
     """Sleep Learning dataset."""
 
-    def __init__(self, foldr: str, class_remapping: dict, feature_extractor,
+    def __init__(self, foldr: str, num_labels: int, feature_extractor,
                  neighbors=4, discard_arts=True, transform=None):
         assert(neighbors % 2 == 0)
+        if num_labels == 5:
+            class_remapping = {'WAKE': 'WAKE', 'N1': 'N1', 'N2': 'N2', 'N3': 'N3',
+                  'N4': 'WAKE', 'REM': 'REM', 'Artifact': 'WAKE'}
+        else:
+            class_remapping = {'WAKE': 'WAKE', 'N1': 'NREM', 'N2': 'NREM',
+                               'N3': 'NREM',
+                               'N4': 'NREM', 'REM': 'REM', 'Artifact': 'WAKE'}
+
         dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         self.dir = os.path.join(dir, 'data', 'processed', foldr)
         self.X = []
@@ -142,7 +150,7 @@ def train_epoch(train_loader: DataLoader, model: Net, criterion, optimizer,
 
     print('Epoch: [{0}]x[{1}/{1}]\t'
          'Time {batch_time.avg:.1f}\t'
-          'Loss {loss.avg:.1f}\t'
+          'Loss {loss.avg:.2f}\t'
           'Prec@1 {top1.avg:.2f}\t'
           'Prec@2 {top2.avg:.2f}'.format(
         epoch, len(train_loader), batch_time=batch_time,
@@ -183,7 +191,7 @@ def validation_epoch(val_loader: DataLoader, model: Net, criterion, cuda: bool) 
 
     print('Test:  [{0}/{0}]\t\t'
           'Time {batch_time.avg:.1f}\t'
-          'Loss {loss.avg:.1f}\t'
+          'Loss {loss.avg:.2f}\t'
           'Prec@1 {top1.avg:.2f}\t\t'
           'Prec@2 {top2.avg:.2f}'.format(
         len(val_loader), batch_time=batch_time,
@@ -241,7 +249,8 @@ def test(test_loader: DataLoader, model: Net, cuda) -> np.array:
     return prediction.astype(int)
 
 
-def save_checkpoint(state, is_best, filename=root_dir + '/models/checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, dir=os.path.join(root_dir, 'models')):
+    filename = os.path.join(dir, 'checkpoint.pth.tar')
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, root_dir + '/models/model_best.pth.tar')
+        shutil.copyfile(filename, os.path.join(dir, 'model_best.pth.tar'))
