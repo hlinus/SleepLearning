@@ -13,7 +13,7 @@ sys.path.insert(0, root_dir)
 from sleeplearning.lib.loaders.subject import Subject
 from sleeplearning.lib.utils import SleepLearningDataset, train_epoch, \
     validation_epoch, save_checkpoint
-from sleeplearning.lib.model import Net
+from sleeplearning.lib.model import Net, Overfit
 from sleeplearning.lib.feature_extractor import *
 from sklearn.externals import joblib
 
@@ -52,12 +52,14 @@ class SleepLearning(object):
         val_loader = DataLoader(val_ds, batch_size=test_batch_size,
                                 shuffle=False, **self.kwargs)
 
-        class_weights = torch.from_numpy(train_ds.weights).float() \
+        class_weights = torch.from_numpy(100*train_ds.weights).float() \
             if weight_loss \
             else torch.from_numpy(np.ones(train_ds.weights.shape)).float()
         print("train class weights: ", class_weights)
+        input_shape = train_ds.dataset_info['input_shape']
+        num_classes = len(train_ds.dataset_info['class_distribution'].keys())
         model = Net(
-            num_classes=len(train_ds.dataset_info['class_distribution'].keys()))
+            num_classes=num_classes, input_shape=input_shape)
 
         # initialize layers with xavier
         model.weights_init()
