@@ -6,10 +6,11 @@ from torch.nn.init import xavier_normal
 class Net(nn.Module):
     def __init__(self, num_classes: int, input_shape: tuple):
         super(Net, self).__init__()
-        padding = (input_shape[1] % 3, input_shape[2] % 3)
-        self.conv1 = nn.Conv2d(input_shape[0], 32, kernel_size=3,
+        kernel_size = 3
+        padding = (kernel_size // 2, kernel_size // 2)
+        self.conv1 = nn.Conv2d(input_shape[0], 32, kernel_size=kernel_size,
                                padding=padding)
-        self.fc1 = nn.Linear(32*input_shape[1]//4*input_shape[2]//4, 1000)
+        self.fc1 = nn.Linear(32*(input_shape[1]//4)*(input_shape[2]//4), 1000)
         self.fc2 = nn.Linear(1000, 1000)
         self.fc3 = nn.Linear(1000, num_classes)
 
@@ -35,8 +36,9 @@ class Net(nn.Module):
 class Overfit(nn.Module):
     def __init__(self, num_classes: int, input_shape: tuple):
         super(Overfit, self).__init__()
-        padding = (input_shape[1]%3, input_shape[2]%3)
-        self.conv1 = nn.Conv2d(input_shape[0], 48, kernel_size=3,
+        kernel_size = 3
+        padding = (kernel_size//2, kernel_size//2)
+        self.conv1 = nn.Conv2d(input_shape[0], 48, kernel_size=kernel_size,
                                padding=padding)
         self.conv2 = nn.Conv2d(48, 32, kernel_size=3, padding=padding)
         self.fc1 = nn.Linear(32*input_shape[1]//4*input_shape[2]//4, 8000)
