@@ -18,6 +18,54 @@ ex = Experiment(base_dir=os.path.join(root_dir, 'sleeplearning', 'lib'))
 ex.observers.append(
     FileStorageObserver.create(os.path.join(root_dir, 'exp_logs')))
 
+@ex.named_config
+def physio_chal18():
+    # default dataset settings
+    train_dir = os.path.join('physionet_chal18', 'train')
+    val_dir = os.path.join('physionet_chal18', 'val')
+    num_labels = 5
+
+    # feature extraction settings
+    neighbors = 4
+
+    feats = FeatureUnion(
+        [('eeg_spectrogram',
+          Pipeline([
+              ('spectrogram',
+               Spectrogram(channel='F4-M1', sampling_rate=100, window=156,
+                           stride=100)),
+              ('cutter',
+               CutFrequencies(window=156, sampling_rate=100, lower=0,
+                              upper=25)),
+              ('log', LogTransform()),
+              ('standard', TwoDScaler())
+          ])
+          ), ('emg_psd',
+              Pipeline([
+                  ('spectrogram',
+                   Spectrogram(channel='CHEST', sampling_rate=100, window=156,
+                               stride=100)),
+                  ('cutter',
+                   CutFrequencies(window=156, sampling_rate=100, lower=0,
+                                  upper=60)),
+                  ('psd', PowerSpectralDensityMean(output_dim=40)),
+                  ('log', LogTransform()),
+                  ('standard', TwoDScaler())
+              ])
+              ),
+         ('eogl_psd',
+          Pipeline([
+              ('spectrogram',
+               Spectrogram(channel='E1-M2', sampling_rate=100, window=156,
+                           stride=100)),
+              ('cutter',
+               CutFrequencies(window=156, sampling_rate=100, lower=0,
+                              upper=60)),
+              ('psd', PowerSpectralDensityMean(output_dim=40)),
+              ('log', LogTransform()),
+              ('standard', TwoDScaler())
+          ])
+          )], n_jobs=2)
 
 @ex.named_config
 def physiods():
