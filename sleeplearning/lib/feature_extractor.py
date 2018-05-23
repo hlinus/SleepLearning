@@ -3,6 +3,47 @@ from scipy import signal
 
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline, FeatureUnion
+from typing import List, Tuple
+
+
+class FeatureExtractor():
+    def __init__(self, features: dict):
+        pipelines = []
+        sampling_rate = features['sampling_rate']
+        window = features['window']
+        stride = features['stride']
+
+        f = np.fft.rfftfreq(window, 1.0 / sampling_rate)
+        outdim = 1
+
+        for i, channel in enumerate(features['channels']):
+            transformers = []
+            transformers.append(('s1', Spectrogram(channel['channel'],
+                                    sampling_rate, window,
+                                    stride)))
+            transformers.append(('cut',CutFrequencies(window,
+                                                sampling_rate,
+                                                channel['cut_lower'],
+                                                channel['cut_upper'])))
+
+            if channel['psd'] == 'mean':
+                transformers.append(('psd', PowerSpectralDensityMean(outdim)))
+            elif channel['psd'] == 'sum':
+                transformers.append(('psd', PowerSpectralDensitySum(outdim)))
+            else:
+                # infer output dimension for psd
+                # TODO: mamke it work if psd feature is before non-psd feature
+                outdim = len(np.where(np.logical_and(f>=channel['cut_lower'],
+                                                f<=channel['cut_upper']))[0])
+            if channel['log']:
+                transformers.append(('log',LogTransform()))
+            if channel['scale'] == '2D':
+                transformers.append(('2Dscale',TwoDScaler()))
+            pipelines.append(('p'+str(i), Pipeline(transformers)))
+        self.features = FeatureUnion(pipelines, n_jobs=2)
+
+    def get_features(self) -> FeatureUnion:
+        return self.features
 
 
 class TwoDScaler(BaseEstimator, TransformerMixin):

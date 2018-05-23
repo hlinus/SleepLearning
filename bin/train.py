@@ -1,22 +1,20 @@
-import sys
 import os
-
+import sys
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 import torch
-from sklearn.pipeline import Pipeline, FeatureUnion
 from sleeplearning.lib.utils import SleepLearningDataset
-from sleeplearning.lib.feature_extractor import Spectrogram, CutFrequencies, \
-    LogTransform, TwoDScaler, PowerSpectralDensityMean
+from sleeplearning.lib.feature_extractor import FeatureExtractor
 from sleeplearning.lib.base import SleepLearning
-from sacred.observers import FileStorageObserver
+from sacred.observers import TinyDbObserver
 from sacred import Experiment, Ingredient
-
+import platform
 carods_ingredient = Ingredient('carods')
 physiods_ingredient = Ingredient('physiods')
 ex = Experiment(base_dir=os.path.join(root_dir, 'sleeplearning', 'lib'))
 ex.observers.append(
-    FileStorageObserver.create(os.path.join(root_dir, 'exp_logs')))
+    TinyDbObserver.create(os.path.join(root_dir, 'train_logs_'+str(platform.node()))))
+
 
 @ex.named_config
 def physio_chal18():
@@ -28,73 +26,56 @@ def physio_chal18():
     # feature extraction settings
     neighbors = 4
 
-    feats = FeatureUnion(
-        [('eeg_spectrogram',
-          Pipeline([
-              ('spectrogram',
-               Spectrogram(channel='F4-M1', sampling_rate=100, window=156,
-                           stride=100)),
-              ('cutter',
-               CutFrequencies(window=156, sampling_rate=100, lower=0,
-                              upper=25)),
-              ('log', LogTransform()),
-              ('standard', TwoDScaler())
-          ])
-          ), ('emg_psd',
-              Pipeline([
-                  ('spectrogram',
-                   Spectrogram(channel='CHEST', sampling_rate=100, window=156,
-                               stride=100)),
-                  ('cutter',
-                   CutFrequencies(window=156, sampling_rate=100, lower=0,
-                                  upper=60)),
-                  ('psd', PowerSpectralDensityMean(output_dim=40)),
-                  ('log', LogTransform()),
-                  ('standard', TwoDScaler())
-              ])
-              ),
-         ('eogl_psd',
-          Pipeline([
-              ('spectrogram',
-               Spectrogram(channel='E1-M2', sampling_rate=100, window=156,
-                           stride=100)),
-              ('cutter',
-               CutFrequencies(window=156, sampling_rate=100, lower=0,
-                              upper=60)),
-              ('psd', PowerSpectralDensityMean(output_dim=40)),
-              ('log', LogTransform()),
-              ('standard', TwoDScaler())
-          ])
-          )], n_jobs=2)
+    feats = {
+        'sampling_rate': 100,
+        'window': 156,
+        'stride': 100,
+        'channels': [
+            {'channel': 'F4-M1',
+             'cut_lower': 0,
+             'cut_upper': 25,
+             'psd': 'none',
+             'log': True,
+             'scale': '2D'},
+            {'channel': 'CHEST',
+             'cut_lower': 0,
+             'cut_upper': 60,
+             'psd': 'mean',
+             'log': True,
+             'scale': '2D'},
+            {'channel': 'E1-M2',
+             'cut_lower': 0,
+             'cut_upper': 60,
+             'psd': 'mean',
+             'log': True,
+             'scale': '2D'}
+        ]
+    }
+
 
 @ex.named_config
 def physiods():
     # default dataset settings
-    train_dir = os.path.join('physionet_mini', 'train')
-    val_dir = os.path.join('physionet_mini', 'val')
+    train_dir = os.path.join('physionet_mini2', 'train')
+    val_dir = os.path.join('physionet_mini2', 'val')
     num_labels = 5
 
     # feature extraction settings
+    neighbors = 0
 
-    neighbors = 4
-
-    feats = FeatureUnion(
-        [
-            ('eeg_spectrogram',
-             Pipeline([
-                 ('spectrogram',
-                  Spectrogram(channel='EEG Fpz-Cz', sampling_rate=100,
-                              window=156,
-                              stride=100)),
-                 ('cutter',
-                  CutFrequencies(window=156, sampling_rate=100, lower=0,
-                                 upper=25)),
-                 ('log', LogTransform()),
-                 ('standard', TwoDScaler())
-             ])
-             )
-        ],
-        n_jobs=1)
+    feats = {
+        'sampling_rate': 100,
+        'window': 156,
+        'stride': 100,
+        'channels': [
+            {'channel': 'EEG Fpz-Cz',
+             'cut_lower': 0,
+             'cut_upper': 25,
+             'psd': 'none',
+             'log': False,
+             'scale': '2D'}
+        ]
+    }
 
 
 @ex.named_config
@@ -107,56 +88,37 @@ def carods():
     # feature extraction settings
     neighbors = 4
 
-    feats = FeatureUnion(
-        [('eeg_spectrogram',
-          Pipeline([
-              ('spectrogram',
-               Spectrogram(channel='EEG', sampling_rate=100, window=156,
-                           stride=100)),
-              ('cutter',
-               CutFrequencies(window=156, sampling_rate=100, lower=0,
-                              upper=25)),
-              ('log', LogTransform()),
-              ('standard', TwoDScaler())
-          ])
-          ), ('emg_psd',
-              Pipeline([
-                  ('spectrogram',
-                   Spectrogram(channel='EMG', sampling_rate=100, window=156,
-                               stride=100)),
-                  ('cutter',
-                   CutFrequencies(window=156, sampling_rate=100, lower=0,
-                                  upper=60)),
-                  ('psd', PowerSpectralDensityMean(output_dim=40)),
-                  ('log', LogTransform()),
-                  ('standard', TwoDScaler())
-              ])
-              ),
-         ('eogl_psd',
-          Pipeline([
-              ('spectrogram',
-               Spectrogram(channel='EOGL', sampling_rate=100, window=156,
-                           stride=100)),
-              ('cutter',
-               CutFrequencies(window=156, sampling_rate=100, lower=0,
-                              upper=60)),
-              ('psd', PowerSpectralDensityMean(output_dim=40)),
-              ('log', LogTransform()),
-              ('standard', TwoDScaler())
-          ])
-          ), ('eogr_psd',
-              Pipeline([
-                  ('spectrogram',
-                   Spectrogram(channel='EOGR', sampling_rate=100, window=156,
-                               stride=100)),
-                  ('cutter',
-                   CutFrequencies(window=156, sampling_rate=100, lower=0,
-                                  upper=60)),
-                  ('psd', PowerSpectralDensityMean(output_dim=40)),
-                  ('log', LogTransform()),
-                  ('standard', TwoDScaler())
-              ])
-              )], n_jobs=2)
+    feats = {
+        'sampling_rate': 100,
+        'window': 156,
+        'stride': 100,
+        'channels': [
+            {'channel': 'EEG',
+             'cut_lower': 0,
+             'cut_upper': 25,
+             'psd': 'none',
+             'log': True,
+             'scale': '2D'},
+            {'channel': 'EMG',
+             'cut_lower': 0,
+             'cut_upper': 60,
+             'psd': 'mean',
+             'log': True,
+             'scale': '2D'},
+            {'channel': 'EOGL',
+             'cut_lower': 0,
+             'cut_upper': 60,
+             'psd': 'mean',
+             'log': True,
+             'scale': '2D'},
+            {'channel': 'EOGR',
+             'cut_lower': 0,
+             'cut_upper': 60,
+             'psd': 'mean',
+             'log': True,
+             'scale': '2D'}
+        ]
+    }
 
 
 @ex.config
@@ -164,7 +126,7 @@ def cfg():
     # training settings
     batch_size = 32
     test_batch_size = 512
-    epochs = 20
+    epochs = 50
     lr = 5 * 1e-5
     resume = ''
     cuda = torch.cuda.is_available()
@@ -173,11 +135,11 @@ def cfg():
 
 @ex.capture
 def load_data(train_dir: os.path, val_dir: os.path, num_labels: int,
-              feats, neighbors: int):
+              feats: dict, neighbors: int):
     if num_labels not in [3, 5]:
         raise ValueError('num_labels must be either 3 or 5')
-    train_ds = SleepLearningDataset(train_dir, num_labels, feats, neighbors)
-    val_ds = SleepLearningDataset(val_dir, num_labels, feats, neighbors)
+    train_ds = SleepLearningDataset(train_dir, num_labels, FeatureExtractor(feats).get_features(), neighbors)
+    val_ds = SleepLearningDataset(val_dir, num_labels, FeatureExtractor(feats).get_features(), neighbors)
     return train_ds, val_ds
 
 
@@ -193,4 +155,4 @@ def main(_config):
                           _config['epochs'],
                           train_ds=train_ds,
                           val_ds=val_ds,
-                          out_dir=ex.observers[0].dir)
+                          out_dir=os.path.join(root_dir, 'models'))
