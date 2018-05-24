@@ -1,23 +1,20 @@
+import inspect
 import os
-import shutil
+import re
 import sys
-import time
-from typing import List, Tuple
 import numpy as np
 import torch
-from torch.autograd import Variable
-from torch.utils.data import DataLoader
+from torch import optim
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 from sleeplearning.lib.loaders.subject import Subject
-from sleeplearning.lib.model import Net
 
 
 class SleepLearningDataset(object):
     """Sleep Learning dataset."""
 
     def __init__(self, foldr: str, num_labels: int, feature_extractor,
-                 neighbors=4, discard_arts=True, transform=None):
+                 neighbors, discard_arts=True, transform=None):
         assert(neighbors % 2 == 0)
         if num_labels == 5:
             class_remapping = {'WAKE': 'WAKE', 'N1': 'N1', 'N2': 'N2', 'N3': 'N3',
@@ -114,90 +111,53 @@ class SleepLearningDataset(object):
         return len(self.X)
 
 
-def train_epoch(train_loader: DataLoader, model: Net, criterion, optimizer,
-                epoch, cuda):
-    model.train()
-    torch.set_grad_enabled(True)
-    batch_time = AverageMeter()
-    losses = AverageMeter()
-    top1 = AverageMeter()
-    top2 = AverageMeter()
+def get_optimizer(s):
+    """
+    Parse optimizer parameters.
+    Input should be of the form:
+        - "sgd,lr=0.01"
+        - "adagrad,lr=0.1,lr_decay=0.05"
+    """
+    if "," in s:
+        method = s[:s.find(',')]
+        optim_params = {}
+        for x in s[s.find(',') + 1:].split(','):
+            split = x.split('=')
+            assert len(split) == 2
+            assert re.match("^[+-]?(\d+(\.\d*)?|\.\d+)$", split[1]) is not None
+            optim_params[split[0]] = float(split[1])
+    else:
+        method = s
+        optim_params = {}
 
-    end = time.time()
-    for batch_idx, (data, target) in enumerate(train_loader):
-        if cuda:
-            data, target = data.cuda(), target.cuda()
-        data, target = Variable(data).float(), Variable(target).long()
+    if method == 'adadelta':
+        optim_fn = optim.Adadelta
+    elif method == 'adagrad':
+        optim_fn = optim.Adagrad
+    elif method == 'adam':
+        optim_fn = optim.Adam
+    elif method == 'adamax':
+        optim_fn = optim.Adamax
+    elif method == 'asgd':
+        optim_fn = optim.ASGD
+    elif method == 'rmsprop':
+        optim_fn = optim.RMSprop
+    elif method == 'rprop':
+        optim_fn = optim.Rprop
+    elif method == 'sgd':
+        optim_fn = optim.SGD
+        assert 'lr' in optim_params
+    else:
+        raise Exception('Unknown optimization method: "%s"' % method)
 
-        # compute output
-        output = model(data)
-        loss = criterion(output, target)
+    # check that we give good parameters to the optimizer
+    expected_args = inspect.getargspec(optim_fn.__init__)[0]
+    assert expected_args[:2] == ['self', 'params']
+    if not all(k in expected_args[2:] for k in optim_params.keys()):
+        raise Exception('Unexpected parameters: expected "%s", got "%s"' % (
+            str(expected_args[2:]), str(optim_params.keys())))
 
-        # measure accuracy and record loss
-        (prec1, prec2), _ = accuracy(output, target, topk=(1, 2))
-        losses.update(loss.item(), data.size(0))
-        top1.update(prec1[0], data.size(0))
-        top2.update(prec2[0], data.size(0))
-
-        # compute gradient and do Adam step
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
-
-    print('Epoch: [{0}]x[{1}/{1}]\t'
-         'Time {batch_time.avg:.1f}\t'
-          'Loss {loss.avg:.2f}\t'
-          'Prec@1 {top1.avg:.2f}\t'
-          'Prec@2 {top2.avg:.2f}'.format(
-        epoch, len(train_loader), batch_time=batch_time,
-        loss=losses, top1=top1, top2=top2))
-
-
-def validation_epoch(val_loader: DataLoader, model: Net, criterion, cuda: bool) \
-        -> Tuple[float, np.array]:
-    batch_time = AverageMeter()
-    losses = AverageMeter()
-    top1 = AverageMeter()
-    top2 = AverageMeter()
-    prediction = np.array([])
-    model.eval()
-    torch.set_grad_enabled(False)
-    end = time.time()
-    predictions = []
-    for data, target in val_loader:
-        if cuda:
-            data, target = data.cuda(), target.cuda()
-        data, target = Variable(data).float(), Variable(
-            target).long()
-
-        # compute output
-        output = model(data)
-        loss = criterion(output, target)
-
-        # measure accuracy and record loss
-        (prec1, prec2), prediction = accuracy(output, target, topk=(1, 2))
-        predictions.append(prediction)
-        losses.update(loss.item(), data.size(0))
-        top1.update(prec1[0], data.size(0))
-        top2.update(prec2[0], data.size(0))
-
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
-
-    print('Test:  [{0}/{0}]\t\t'
-          'Time {batch_time.avg:.1f}\t'
-          'Loss {loss.avg:.2f}\t'
-          'Prec@1 {top1.avg:.2f}\t\t'
-          'Prec@2 {top2.avg:.2f}'.format(
-        len(val_loader), batch_time=batch_time,
-        loss=losses, top1=top1, top2=top2))
-    predictions = torch.cat(predictions)
-    return top1.avg, predictions
+    return optim_fn, optim_params
 
 
 class AverageMeter(object):
@@ -206,51 +166,15 @@ class AverageMeter(object):
         self.reset()
 
     def reset(self):
+        self.vals = []
         self.val = 0
         self.avg = 0
         self.sum = 0
         self.count = 0
 
     def update(self, val, n=1):
+        self.vals.append(val)
         self.val = val
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
-
-
-def accuracy(output, target, topk=(1,)) -> Tuple[List[List[float]], torch.autograd.Variable]:
-    """Computes the precision@k for the specified values of k"""
-    maxk = max(topk)
-    batch_size = target.size(0)
-
-    _, pred = output.topk(maxk, 1, True, True)
-    pred = pred.t()
-    correct = pred.eq(target.view(1, -1).expand_as(pred))
-
-    res = []
-    for k in topk:
-        correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
-        # TODO: keep it as torch Variable and only convert for output if needed
-        res.append((correct_k.mul_(100.0 / batch_size)).data.cpu().numpy())
-    return res, pred[0]
-
-
-def test(test_loader: DataLoader, model: Net, cuda) -> np.array:
-    model.eval()
-    prediction = np.array([])
-    for data, target in test_loader:
-        if cuda:
-            data, target = data.cuda(), target.cuda()
-        data, target = Variable(data, volatile=True).float(), Variable(target).long()
-        # compute output
-        output = model(data)
-        _, pred = output.topk(1, 1, True, True)
-        prediction = np.append(prediction, pred.data.cpu().numpy())
-    return prediction.astype(int)
-
-
-def save_checkpoint(state, is_best, dir=os.path.join(root_dir, 'models')):
-    filename = os.path.join(dir, 'checkpoint.pth.tar')
-    torch.save(state, filename)
-    if is_best:
-        shutil.copyfile(filename, os.path.join(dir, 'model_best.pth.tar'))

@@ -12,8 +12,8 @@ import platform
 carods_ingredient = Ingredient('carods')
 physiods_ingredient = Ingredient('physiods')
 ex = Experiment(base_dir=os.path.join(root_dir, 'sleeplearning', 'lib'))
-ex.observers.append(
-    TinyDbObserver.create(os.path.join(root_dir, 'train_logs_'+str(platform.node()))))
+#ex.observers.append(
+#    TinyDbObserver.create(os.path.join(root_dir, 'train_logs_'+str(platform.node()))))
 
 
 @ex.named_config
@@ -21,10 +21,6 @@ def physio_chal18():
     # default dataset settings
     train_dir = os.path.join('physionet_chal18', 'train')
     val_dir = os.path.join('physionet_chal18', 'val')
-    num_labels = 5
-
-    # feature extraction settings
-    neighbors = 4
 
     feats = {
         'sampling_rate': 100,
@@ -56,12 +52,8 @@ def physio_chal18():
 @ex.named_config
 def physiods():
     # default dataset settings
-    train_dir = os.path.join('physionet_mini2', 'train')
-    val_dir = os.path.join('physionet_mini2', 'val')
-    num_labels = 5
-
-    # feature extraction settings
-    neighbors = 0
+    train_dir = os.path.join('physionet_mini', 'train')
+    val_dir = os.path.join('physionet_mini', 'val')
 
     feats = {
         'sampling_rate': 100,
@@ -70,7 +62,7 @@ def physiods():
         'channels': [
             {'channel': 'EEG Fpz-Cz',
              'cut_lower': 0,
-             'cut_upper': 25,
+             'cut_upper': 100,
              'psd': 'none',
              'log': False,
              'scale': '2D'}
@@ -83,10 +75,6 @@ def carods():
     # default dataset settings
     train_dir = os.path.join('newDS', 'train')
     val_dir = os.path.join('newDS', 'test')
-    num_labels = 5
-
-    # feature extraction settings
-    neighbors = 4
 
     feats = {
         'sampling_rate': 100,
@@ -123,36 +111,25 @@ def carods():
 
 @ex.config
 def cfg():
+    # feature settings
+    nclasses = 5
+    neighbors = 0
+
     # training settings
-    batch_size = 32
-    test_batch_size = 512
-    epochs = 50
-    lr = 5 * 1e-5
-    resume = ''
-    cuda = torch.cuda.is_available()
-    weight_loss = False
+    ts = {
+        'model': 'SleepStage',
+        'batch_size' : 32,
+        'epochs' : 50,
+        'optim' : 'adam,lr=0.00005',
+        'cuda' : torch.cuda.is_available(),
+    }
+    seed = 42
 
-
-@ex.capture
-def load_data(train_dir: os.path, val_dir: os.path, num_labels: int,
-              feats: dict, neighbors: int):
-    if num_labels not in [3, 5]:
-        raise ValueError('num_labels must be either 3 or 5')
-    train_ds = SleepLearningDataset(train_dir, num_labels, FeatureExtractor(feats).get_features(), neighbors)
-    val_ds = SleepLearningDataset(val_dir, num_labels, FeatureExtractor(feats).get_features(), neighbors)
-    return train_ds, val_ds
 
 
 @ex.automain
-def main(_config):
-    train_ds, val_ds = load_data()
-    SleepLearning().train(_config['batch_size'],
-                          _config['test_batch_size'],
-                          _config['lr'],
-                          _config['resume'],
-                          _config['cuda'],
-                          _config['weight_loss'],
-                          _config['epochs'],
-                          train_ds=train_ds,
-                          val_ds=val_ds,
-                          out_dir=os.path.join(root_dir, 'models'))
+def main(train_dir, val_dir, ts, feats, nclasses, neighbors, seed):
+    print("seed: ", seed)
+    best_prec1 = SleepLearning(seed).train(train_dir, val_dir, ts, feats, nclasses,
+                                     neighbors, seed)
+    return best_prec1
