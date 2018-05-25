@@ -1,19 +1,15 @@
 import os
 import sys
+import torch
+from sacred import Experiment, Ingredient
+from sacred.observers import FileStorageObserver
+import platform
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
-import torch
-from sleeplearning.lib.utils import SleepLearningDataset
-from sleeplearning.lib.feature_extractor import FeatureExtractor
 from sleeplearning.lib.base import SleepLearning
-from sacred.observers import TinyDbObserver
-from sacred import Experiment, Ingredient
-import platform
 carods_ingredient = Ingredient('carods')
 physiods_ingredient = Ingredient('physiods')
 ex = Experiment(base_dir=os.path.join(root_dir, 'sleeplearning', 'lib'))
-#ex.observers.append(
-#    TinyDbObserver.create(os.path.join(root_dir, 'train_logs_'+str(platform.node()))))
 
 
 @ex.named_config
@@ -124,12 +120,17 @@ def cfg():
         'cuda' : torch.cuda.is_available(),
     }
     seed = 42
+    logfoldr = 'debug'
 
 
 
 @ex.automain
-def main(train_dir, val_dir, ts, feats, nclasses, neighbors, seed):
+def main(train_dir, val_dir, ts, feats, nclasses, neighbors, seed, _run):
+    run_id = '_'.join(_run.meta_info['options']['UPDATE']) + \
+             "_{:%Y-%m-%d-%H-%M-%S}".format(_run.start_time)
+    log_dir = os.path.join('..', 'logs', platform.node(),run_id)
+    ex.observers.append(FileStorageObserver.create(log_dir))
     print("seed: ", seed)
-    best_prec1 = SleepLearning(seed).train(train_dir, val_dir, ts, feats, nclasses,
-                                     neighbors, seed)
+    best_prec1 = SleepLearning().train(train_dir, val_dir, ts, feats, nclasses,
+                                     neighbors, seed, log_dir)
     return best_prec1

@@ -14,13 +14,13 @@ class SleepLearning(object):
         pass
 
     @staticmethod
-    def train(train_dir, val_dir, ts, feats, nclasses, neighbors, seed):
+    def train(train_dir, val_dir, ts, feats, nclasses, neighbors, seed, log_dir):
         train_ds = SleepLearning.load_data(train_dir, nclasses, feats,
                                            neighbors)
         val_ds = SleepLearning.load_data(val_dir, nclasses, feats,
                                            neighbors)
         inputdim = train_ds.dataset_info['input_shape']
-        clf = SlClassifier(inputdim, nclasses, ts, seed)
+        clf = SlClassifier(inputdim, nclasses, ts, seed, log_dir=log_dir)
         clf.fit(train_ds, val_ds)
         return clf.best_acc_
 

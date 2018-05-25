@@ -17,8 +17,8 @@ import torch.nn.functional as F
 from torch.nn.init import xavier_normal
 from torch.utils.data import DataLoader
 from typing import List, Tuple
-from torchnet import meter
 from sleeplearning.lib.feature_extractor import FeatureExtractor
+from sleeplearning.lib.logger import Logger
 from sleeplearning.lib.utils import SleepLearningDataset, AverageMeter, \
     get_optimizer
 
@@ -88,7 +88,8 @@ class SleepStage(nn.Module):
 
 
 class SlClassifier(object):
-    def __init__(self, inputdim, nclasses, ts, seed):
+    def __init__(self, inputdim, nclasses, ts, seed, log_dir = None,
+                 comment: str = None):
         # fix seed
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -114,6 +115,7 @@ class SlClassifier(object):
         self.criterion = torch.nn.CrossEntropyLoss()
         self.tenacity = 5
         self.best_acc_ = 0
+        self.logger = Logger(log_dir)
 
         if self.cudaEfficient:
             self.remap_storage = lambda storage, loc: storage.cuda(0)
@@ -132,6 +134,7 @@ class SlClassifier(object):
         bestaccuracy = -1
         stop_train = False
         early_stop_count = 0
+
 
         # Preparing validation data
         train_loader = DataLoader(train_ds, batch_size=self.batch_size,
@@ -183,6 +186,11 @@ class SlClassifier(object):
             loss.backward()
             self.optimizer.step()
 
+            # log the loss
+            if self.logger is not None:
+                step = (self.nepoch - 1) * len(train_loader) + batch_idx
+                self.logger.scalar_summary('loss/train',loss, step)
+
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
@@ -207,9 +215,9 @@ class SlClassifier(object):
         self.model.eval()
         torch.set_grad_enabled(False)
         end = time.time()
-        predictions = []
-        confusion_matrix = meter.ConfusionMeter(5)
-        for data, target in val_loader:
+        predictions = np.array([], dtype=int)
+        targets = np.array([], dtype=int)
+        for batch_idx, (data, target) in enumerate(val_loader):
             if self.cudaEfficient:
                 data, target = data.cuda(), target.cuda()
             data, target = Variable(data).float(), Variable(
@@ -222,15 +230,23 @@ class SlClassifier(object):
             # measure accuracy and record loss
             (prec1, prec2), prediction = self.accuracy_(output, target,
                                                         topk=(1, 2))
-            predictions.append(prediction)
-            confusion_matrix.add(output.data.squeeze(), target.long())
+            predictions = np.append(predictions, prediction)
+            targets = np.append(targets, target.data.numpy())
             losses.update(loss.item(), data.size(0))
             top1.update(prec1, data.size(0))
             top2.update(prec2, data.size(0))
 
+            # log the loss
+            if self.logger is not None:
+                step = (self.nepoch - 2)*len(val_loader)+batch_idx
+                self.logger.scalar_summary('loss/val', loss, step)
+
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
+
+        if self.logger is not None:
+            self.logger.cm_summary(targets, predictions, self.nepoch-1)
 
         print('Val:  [{0}/{0}]\t\t'
               'Time {batch_time.sum:.1f}\t'
@@ -239,8 +255,8 @@ class SlClassifier(object):
               'Prec@2 {top2.avg:.2f}'.format(
             len(val_loader), batch_time=batch_time,
             loss=losses, top1=top1, top2=top2))
-        predictions = torch.cat(predictions)
-        return top1.avg, confusion_matrix.conf
+
+        return top1.avg, predictions
 
     def predict(self, test_dir):
         test_ds = SleepLearningDataset(test_dir, self.nclasses,
@@ -287,7 +303,7 @@ class SlClassifier(object):
                       checkpoint['best_prec1']))
 
     @staticmethod
-    def accuracy_(self, output, target, topk=(1,)) -> Tuple[
+    def accuracy_(output, target, topk=(1,)) -> Tuple[
         List[float], torch.autograd.Variable]:
         """Computes the precision@k for the specified values of k"""
         maxk = max(topk)
