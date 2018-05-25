@@ -1,6 +1,3 @@
-# Code referenced from https://gist.github.com/gyglim/1f8dfb1b5c82627ae3efcfbbadb9f514
-import re
-
 import matplotlib
 import tensorflow as tf
 import numpy as np
@@ -76,7 +73,41 @@ class Logger(object):
         summary = tfplot.figure.to_summary(fig, tag='cm')
         self.writer.add_summary(summary, step)
 
-    def image_summary(self, tag, images, step):
+    def image_summary(self, tag, img, step, vmin=None, vmax=None, cmap=None):
+        """Log one image."""
+
+        img_summaries = []
+        # Write the image to a string
+        try:
+            s = StringIO()
+        except:
+            s = BytesIO()
+        # normalize
+        vmin = img.min() if vmin is None else vmin
+        vmax = img.max() if vmax is None else vmax
+        if vmin != vmax:
+            img = (img - vmin) / (vmax - vmin)  # vmin..vmax
+        else:
+            # Avoid 0-division
+            img = img * 0.
+        if cmap is not None:
+            cmapper = matplotlib.cm.get_cmap(cmap)
+            img = cmapper(img, bytes=True)  # (nxmx4)
+        scipy.misc.toimage(img).save(s, format="png")
+        # Create an Image object
+        img_sum = tf.Summary.Image(encoded_image_string=s.getvalue(),
+                                   height=img.shape[0],
+                                   width=img.shape[1])
+        # Create a Summary value
+        img_summary = tf.Summary.Value(tag=tag, image=img_sum)
+        img_summaries.append(
+                tf.Summary.Value(tag=tag, image=img_sum))
+
+        # Create and write Summary
+        summary = tf.Summary(value=img_summaries)
+        self.writer.add_summary(summary, step)
+
+    def images_summary(self, tag, images, step, vmin=None, vmax=None, cmap=None):
         """Log a list of images."""
 
         img_summaries = []
@@ -86,6 +117,20 @@ class Logger(object):
                 s = StringIO()
             except:
                 s = BytesIO()
+
+            # normalize
+            vmin = img.min() if vmin is None else vmin
+            vmax = img.max() if vmax is None else vmax
+            if vmin != vmax:
+                img = (img - vmin) / (vmax - vmin)  # vmin..vmax
+            else:
+                # Avoid 0-division
+                img = img * 0.
+
+            if cmap is not None:
+                cmapper = matplotlib.cm.get_cmap(cmap)
+                img = cmapper(img, bytes=True)  # (nxmx4)
+
             scipy.misc.toimage(img).save(s, format="png")
 
             # Create an Image object

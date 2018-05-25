@@ -21,6 +21,14 @@ class SleepLearning(object):
                                            neighbors)
         inputdim = train_ds.dataset_info['input_shape']
         clf = SlClassifier(inputdim, nclasses, ts, seed, log_dir=log_dir)
+
+        # log 10 samples for each label to tensorboard
+        for i in np.unique(train_ds.labels):
+            for k, j in enumerate(np.where(train_ds.labels == i)[0][:10]):
+                img = train_ds[j][0].data.numpy()[0]
+                clf.logger.image_summary('feature/'+Subject.sleep_stages_labels[i], img, k, cmap='jet')
+
+
         clf.fit(train_ds, val_ds)
         return clf.best_acc_
 

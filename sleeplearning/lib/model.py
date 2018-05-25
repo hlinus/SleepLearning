@@ -190,6 +190,8 @@ class SlClassifier(object):
             if self.logger is not None:
                 step = (self.nepoch - 1) * len(train_loader) + batch_idx
                 self.logger.scalar_summary('loss/train',loss, step)
+                self.logger.scalar_summary('acc/train', prec1, step)
+
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -236,17 +238,20 @@ class SlClassifier(object):
             top1.update(prec1, data.size(0))
             top2.update(prec2, data.size(0))
 
-            # log the loss
+            # log the loss and accuracy
             if self.logger is not None:
                 step = (self.nepoch - 2)*len(val_loader)+batch_idx
                 self.logger.scalar_summary('loss/val', loss, step)
+                self.logger.scalar_summary('acc/val', prec1, step)
 
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
 
+        # log accuracy and confusion matrix
         if self.logger is not None:
             self.logger.cm_summary(targets, predictions, self.nepoch-1)
+            self.logger.scalar_summary('acc/val_epoch', top1.avg, self.nepoch-1)
 
         print('Val:  [{0}/{0}]\t\t'
               'Time {batch_time.sum:.1f}\t'

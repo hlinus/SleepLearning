@@ -28,7 +28,7 @@ class SleepLearningDataset(object):
         self.dir = os.path.join(dir, 'data', 'processed', foldr)
         self.X = []
         self.class_remapping = class_remapping
-
+        self.labels = np.array([], dtype=int)
         self.transform = transform
         subject_files = [filename for filename in
                          os.listdir(self.dir) if
@@ -65,6 +65,7 @@ class SleepLearningDataset(object):
                          'subject_label'].item() + '_epoch_' + '{0:0>5}'.format(
                     e) + '_' + str(neighbors) + 'N_' + label
                 sample = {'id': id, 'x': sample, 'y': label_int}
+                self.labels = np.append(self.labels, label_int)
                 self.X.append(sample)
 
         self.dataset_info = {}
