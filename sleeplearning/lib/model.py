@@ -135,13 +135,12 @@ class SlClassifier(object):
         stop_train = False
         early_stop_count = 0
 
-
         # Preparing validation data
         train_loader = DataLoader(train_ds, batch_size=self.batch_size,
                                   shuffle=True, **self.kwargs)
 
         val_loader = DataLoader(val_ds, batch_size=self.batch_size,
-                                shuffle=False, **self.kwargs)
+                                shuffle=True, **self.kwargs)
 
         # Training
         while not stop_train and self.nepoch <= self.max_epoch:
@@ -270,7 +269,7 @@ class SlClassifier(object):
                                        self.neighbors)
 
         test_loader = DataLoader(test_ds, batch_size=self.batch_size,
-                                 shuffle=True, **self.kwargs)
+                                 shuffle=False, **self.kwargs)
 
         self.model.eval()
         prediction = np.array([])
