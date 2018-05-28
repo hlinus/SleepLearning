@@ -37,7 +37,7 @@ stage_dict = {
 EPOCH_SEC_SIZE = 30
 
 
-class Physionet(Subject):
+class SleepEDF(Subject):
     """
     Loader for https://www.physionet.org/physiobank/database/sleep-edfx/ files.
     """
@@ -156,8 +156,12 @@ class Physionet(Subject):
         assert len(x) == len(y)
 
 
-        # TODO: Why cut this off??
         # Select on sleep periods
+        # citation from paper:
+        # "There were long periods of awake or stage W at the start and the end
+        #  of each recording, in which the subject was not sleeping. We only
+        # included 30 minutes of such periods just before and after the sleep
+        # periods, as we were interested in sleep periods."
         w_edge_mins = 30
         nw_idx = np.where(y != stage_dict["W"])[0]
         start_idx = nw_idx[0] - (w_edge_mins * 2)
@@ -170,7 +174,7 @@ class Physionet(Subject):
         y = y[select_idx]
         print("Data after selection: {}, {}".format(x.shape, y.shape))
 
-        self.psgs[select_ch] = x.reshape((-1))
+        self.psgs[select_ch.replace(" ", "-")] = x.reshape((-1))
         self.hypnogram = y
 
 
