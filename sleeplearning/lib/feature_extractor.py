@@ -102,6 +102,7 @@ class OneDScaler(BaseEstimator, TransformerMixin):
     def transform(self, x):
         norm = (x - np.mean(x, axis=1, keepdims=True)) \
                / (np.std(x, axis=1, keepdims=True) + 1e-4)
+        norm = np.expand_dims(norm, axis=1)
         return norm
 
 
