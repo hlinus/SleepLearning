@@ -81,14 +81,16 @@ class SleepLearningDataset(object):
             subject = np.load(os.path.join(self.dir, subject_file))
             subject_labels.append(subject['subject_label'].item())
             psgs_reshaped = subject['psgs'].item()
-
+            # if spectogram used:
             # [num_epochs X num_channels X freq_domain X time_domain]
+            # else
+            # [num_epochs X num_channels X time_domain]
             feature_matrix = feature_extractor.fit_transform(psgs_reshaped)
             del psgs_reshaped
             num_epochs = feature_matrix.shape[0]
 
             # TODO: neighbors for 1D features
-            if feature_matrix.ndim == 3:
+            if feature_matrix.ndim == 4:
                 # pad with zeros before and after (additional '#neighbors' epochs)
                 feature_matrix = np.pad(feature_matrix, (
                     (neighbors // 2, neighbors // 2), (0, 0), (0, 0), (0, 0)),
