@@ -16,34 +16,59 @@ class FeatureExtractor():
         f = np.fft.rfftfreq(window, 1.0 / sampling_rate)
         outdim = 1
 
-        for i, channel in enumerate(features['channels']):
+        for i, (channel, channel_opts) in enumerate(features['channels'].items()):
             transformers = []
-            transformers.append(('s1', Spectrogram(channel['channel'],
-                                    sampling_rate, window,
+            transformers.append(('selector', ChannelSelector(channel)))
+            if 'spectogram' in channel_opts.keys():
+                params = channel_opts['spectogram']
+                sampling_rate = params['fs']
+                window = params['window']
+                stride = params['stride']
+                transformers.append(('s1', Spectrogram(sampling_rate, window,
                                     stride)))
-            transformers.append(('cut',CutFrequencies(window,
+            if 'cut' in channel_opts.keys():
+                transformers.append(('cut',CutFrequencies(window,
                                                 sampling_rate,
-                                                channel['cut_lower'],
-                                                channel['cut_upper'])))
+                                                channel_opts['cut_lower'],
+                                                channel_opts['cut_upper'])))
 
-            if channel['psd'] == 'mean':
-                transformers.append(('psd', PowerSpectralDensityMean(outdim)))
-            elif channel['psd'] == 'sum':
-                transformers.append(('psd', PowerSpectralDensitySum(outdim)))
-            else:
-                # infer output dimension for psd
-                # TODO: mamke it work if psd feature is before non-psd feature
-                outdim = len(np.where(np.logical_and(f>=channel['cut_lower'],
-                                                f<=channel['cut_upper']))[0])
-            if channel['log']:
+            if 'psd' in channel_opts.keys():
+                if channel_opts['psd']['type'] == 'mean':
+                    transformers.append(('psd', PowerSpectralDensityMean(outdim)))
+                elif channel_opts['psd']['type'] == 'sum':
+                    transformers.append(('psd', PowerSpectralDensitySum(outdim)))
+                else:
+                    pass
+                    # infer output dimension for psd
+                    # TODO: mamke it work if psd feature is before non-psd feature
+                    #outdim = len(np.where(np.logical_and(f>=params['cut_lower'],
+                    #                                f<=params['cut_upper']))[0])
+            if channel_opts['log']:
                 transformers.append(('log',LogTransform()))
-            if channel['scale'] == '2D':
+            if channel_opts['scale'] == '2D':
                 transformers.append(('2Dscale',TwoDScaler()))
+            elif channel_opts['scale'] == '1D':
+                transformers.append(('1Dscale', OneDScaler()))
             pipelines.append(('p'+str(i), Pipeline(transformers)))
         self.features = FeatureUnion(pipelines, n_jobs=2)
 
     def get_features(self) -> FeatureUnion:
         return self.features
+
+
+class ChannelSelector(BaseEstimator, TransformerMixin):
+    """
+        Selects channel for the following transforms
+    """
+
+    def __init__(self, channel: str):
+        self.channel = channel
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, x):
+        return x[self.channel]
 
 
 class TwoDScaler(BaseEstimator, TransformerMixin):
@@ -63,15 +88,31 @@ class TwoDScaler(BaseEstimator, TransformerMixin):
         return norm
 
 
+class OneDScaler(BaseEstimator, TransformerMixin):
+    """
+        Zero mean and unit variance scaler
+    """
+
+    def __init__(self):
+        pass
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, x):
+        norm = (x - np.mean(x, axis=1, keepdims=True)) \
+               / (np.std(x, axis=1, keepdims=True) + 1e-4)
+        return norm
+
+
 class Spectrogram(BaseEstimator, TransformerMixin):
     """
     Computes the spectrogram of specific channel
     """
 
-    def __init__(self, channel: str, sampling_rate: int, window: int,
+    def __init__(self, fs: int, window: int,
                  stride: int):
-        self.channel = channel
-        self.sampling_rate = sampling_rate
+        self.sampling_rate = fs
         self.window = window
         self.stride = stride
 
@@ -79,7 +120,7 @@ class Spectrogram(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, x):
-        psg = x[self.channel]
+        psg = x
         padding = self.window // 2 - self.stride // 2
         psg = np.pad(psg, pad_width=((0, 0), (padding, padding)), mode='edge')
         f, t, sxx = signal.spectrogram(psg, fs=self.sampling_rate,
