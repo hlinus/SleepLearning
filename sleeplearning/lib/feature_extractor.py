@@ -9,46 +9,34 @@ from typing import List, Tuple
 class FeatureExtractor():
     def __init__(self, features: dict):
         pipelines = []
-        sampling_rate = features['sampling_rate']
-        window = features['window']
-        stride = features['stride']
 
-        f = np.fft.rfftfreq(window, 1.0 / sampling_rate)
-        outdim = 1
+        #f = np.fft.rfftfreq(window, 1.0 / sampling_rate)
+        outdim = None
+        f = None
+        #outdim = len(np.where(np.logical_and(f >= params['cut_lower'],
+        #                                f<=params['cut_upper']))[0])
 
-        for i, (channel, channel_opts) in enumerate(features['channels'].items()):
+        for i, (channel, channel_opts) in enumerate(features['channels']):
             transformers = []
             transformers.append(('selector', ChannelSelector(channel)))
-            if 'spectogram' in channel_opts.keys():
-                params = channel_opts['spectogram']
-                sampling_rate = params['fs']
-                window = params['window']
-                stride = params['stride']
-                transformers.append(('s1', Spectrogram(sampling_rate, window,
-                                    stride)))
-            if 'cut' in channel_opts.keys():
-                transformers.append(('cut',CutFrequencies(window,
-                                                sampling_rate,
-                                                channel_opts['cut_lower'],
-                                                channel_opts['cut_upper'])))
-
-            if 'psd' in channel_opts.keys():
-                if channel_opts['psd']['type'] == 'mean':
-                    transformers.append(('psd', PowerSpectralDensityMean(outdim)))
-                elif channel_opts['psd']['type'] == 'sum':
-                    transformers.append(('psd', PowerSpectralDensitySum(outdim)))
-                else:
-                    pass
-                    # infer output dimension for psd
-                    # TODO: mamke it work if psd feature is before non-psd feature
-                    #outdim = len(np.where(np.logical_and(f>=params['cut_lower'],
-                    #                                f<=params['cut_upper']))[0])
-            if channel_opts['log']:
-                transformers.append(('log',LogTransform()))
-            if channel_opts['scale'] == '2D':
-                transformers.append(('2Dscale',TwoDScaler()))
-            elif channel_opts['scale'] == '1D':
-                transformers.append(('1Dscale', OneDScaler()))
+            for j, t in enumerate(channel_opts):
+                extractor = eval(t)
+                if t.startswith("Spectrogram"):
+                    between_brackets = t[t.find("(") + 1:t.find(")")].split(',')
+                    opts = dict([(k.strip(), int(v)) for (k,v) in [x.split('=') for x in between_brackets]])
+                    if f is None:
+                        f = np.fft.rfftfreq(opts['window'], 1.0 / opts['fs'])
+                elif t.startswith("Cut"):
+                    between_brackets = t[t.find("(") + 1:t.find(")")].split(',')
+                    opts = dict([(k.strip(), int(v)) for (k, v) in
+                                 [x.split('=') for x in between_brackets]])
+                    if outdim is None:
+                        outdim = len(
+                        np.where(np.logical_and(f >= opts['lower'],
+                                                    f <= opts['upper']))[0])
+                elif t.startswith("Power"):
+                    extractor.output_dim = outdim
+                transformers.append(('s'+str(j), extractor))
             pipelines.append(('p'+str(i), Pipeline(transformers)))
         self.features = FeatureUnion(pipelines, n_jobs=2)
 
@@ -138,7 +126,7 @@ class PowerSpectralDensityMean(BaseEstimator, TransformerMixin):
      values to 'output_dim'
     """
 
-    def __init__(self, output_dim: int):
+    def __init__(self, output_dim: int = 1):
         self.output_dim = output_dim
 
     def fit(self, x, y=None):
@@ -173,10 +161,10 @@ class CutFrequencies(BaseEstimator, TransformerMixin):
     Cuts out the spectrogram between lower and upper frequency
     """
 
-    def __init__(self, window: int, sampling_rate: int, lower: float,
+    def __init__(self, fs: int, window: int, lower: float,
                  upper: float):
         self.window = window
-        self.sampling_rate = sampling_rate
+        self.sampling_rate = fs
         self.lower = lower
         self.upper = upper
 
