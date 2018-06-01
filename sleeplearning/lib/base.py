@@ -23,7 +23,7 @@ class Base(object):
         self.logger = logger
         self.cudaEfficient = cuda
 
-        self.tenacity = 5
+        self.tenacity = 100
         self.best_acc_ = 0
 
         if self.cudaEfficient:
@@ -134,7 +134,7 @@ class Base(object):
             (prec1, prec2), prediction = self.accuracy_(output, target,
                                                         topk=(1, 2))
             predictions = np.append(predictions, prediction)
-            targets = np.append(targets, target.data.numpy())
+            targets = np.append(targets, target.data.cpu().numpy())
             losses.update(loss.item(), data.size(0))
             top1.update(prec1, data.size(0))
             top2.update(prec2, data.size(0))
