@@ -6,11 +6,11 @@ from sacred.observers import FileStorageObserver
 import platform
 import numpy as np
 
+root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
+sys.path.insert(0, root_dir)
 from sleeplearning.lib.models.deep_sleep_net import DeepSleepNet
 from sleeplearning.lib.models.sleep_stage import SleepStage
 
-root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
-sys.path.insert(0, root_dir)
 from sleeplearning.lib.base import Base
 from sleeplearning.lib.logger import Logger
 import sleeplearning.lib.utils as utils
@@ -25,33 +25,26 @@ ex.observers.append(FileStorageObserver.create(log_base_dir))
 @ex.named_config
 def physio_chal18():
     # default dataset settings
-    train_dir = os.path.join('physionet_chal18', 'train')
-    val_dir = os.path.join('physionet_chal18', 'val')
+    train_dir = os.path.join('physionet_challenge', 'train')
+    val_dir = os.path.join('physionet_challenge', 'validation')
 
     feats = {
-        'sampling_rate': 100,
-        'window': 156,
-        'stride': 100,
-        'channels': {
-            'F4-M1': {
-                'cut_lower': 0,
-                'cut_upper': 25,
-                'psd': 'none',
-                'log': True,
-                'scale': '2D'},
-            'CHEST': {
-                'cut_lower': 0,
-                'cut_upper': 60,
-                'psd': 'mean',
-                'log': True,
-                'scale': '2D'},
-            'E1-M2': {
-                'cut_lower': 0,
-                'cut_upper': 60,
-                'psd': 'mean',
-                'log': True,
-                'scale': '2D'}
-        }
+        'channels': [
+            ('F4-M1', [
+                'Spectrogram(fs=100, window=156, stride=100)',
+                'CutFrequencies(fs=100, window=156, lower=0, upper=100)',
+                'TwoDScaler()']),
+            ('F3-M2', [
+                'Spectrogram(fs=100, window=156, stride=100)',
+                'CutFrequencies(fs=100, window=156, lower=0, upper=100)',
+                'TwoDScaler()']),
+            ('O1-M2', [
+                'Spectrogram(fs=100, window=156, stride=100)',
+                'CutFrequencies(fs=100, window=156, lower=0, upper=100)',
+                'PowerSpectralDensityMean()',
+                'LogTransform()',
+                'TwoDScaler()']),
+        ]
     }
 
 
@@ -215,7 +208,6 @@ def main(train_dir, val_dir, ts, feats, nclasses, neighbors, seed, _run):
     if ts['cuda']:
         model.cuda()
         criterion.cuda()
-        optimizer.cuda()
 
     # Fit the model
     clf = Base(model, optimizer, criterion, logger, ts['cuda'])

@@ -1,5 +1,10 @@
 import numpy as np
-import wfdb
+# fix bug: ImportError: libGL.so.1: cannot open shared object file: No such file or directory
+# details: https://github.com/conda-forge/pygridgen-feedstock/issues/10
+import matplotlib
+matplotlib.use("Agg")
+from wfdb import rdrecord
+from wfdb import rdann
 import os
 from sleeplearning.lib.loaders.subject import Subject
 
@@ -12,9 +17,9 @@ class PhysionetChallenge18(Subject):
     """
     def __init__(self, path: str, epoch_length: int = EPOCH_TIME, verbose: bool = False):
         super().__init__(path, epoch_length)
-        filename_base = os.path.basename(os.path.dirname(path))
-        data = wfdb.rdrecord(os.path.join(path, filename_base))
-        annotations = wfdb.rdann(os.path.join(path, filename_base),
+        filename_base = os.path.basename(os.path.dirname(path + '/'))
+        data = rdrecord(os.path.join(path, filename_base))
+        annotations = rdann(os.path.join(path, filename_base),
                                  extension='arousal')
         self.sampling_rate_ = annotations.fs
         self.label = filename_base
