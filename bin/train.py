@@ -14,36 +14,43 @@ from sleeplearning.lib.models.sleep_stage import SleepStage
 from sleeplearning.lib.base import Base
 from sleeplearning.lib.logger import Logger
 import sleeplearning.lib.utils as utils
-
+import sleeplearning.lib.loaders as loaders
+from sleeplearning.lib.loaders.physionet_challenge18 import PhysionetChallenge18
 carods_ingredient = Ingredient('carods')
 physiods_ingredient = Ingredient('physiods')
 ex = Experiment(base_dir=os.path.join(root_dir, 'sleeplearning', 'lib'))
 log_base_dir = os.path.join('..', 'logs', platform.node())
-ex.observers.append(FileStorageObserver.create(log_base_dir))
+#ex.observers.append(FileStorageObserver.create(log_base_dir))
 
 
 @ex.named_config
 def physio_chal18():
     # default dataset settings
-    train_dir = os.path.join('physionet_challenge', 'train')
-    val_dir = os.path.join('physionet_challenge', 'validation')
+    train_dir = os.path.join('../../../physionet-challenge-train/debug')
+    val_dir = os.path.join('../../../physionet-challenge-train/debug')
 
     feats = {
         'channels': [
-            ('F4-M1', [
-                'Spectrogram(fs=100, window=156, stride=100)',
-                'CutFrequencies(fs=100, window=156, lower=0, upper=100)',
-                'TwoDScaler()']),
+            ('C4-M1', [
+                #'BandPass( fs=100, highpass=0.3, lowpass=45)',
+                'Spectrogram(fs=100, window=50, stride=25)',
+                #'CutFrequencies(fs=100, window=50, lower=0, upper=100)',
+                'TwoDScaler()'
+                ]),
             ('F3-M2', [
-                'Spectrogram(fs=100, window=156, stride=100)',
-                'CutFrequencies(fs=100, window=156, lower=0, upper=100)',
-                'TwoDScaler()']),
-            ('O1-M2', [
-                'Spectrogram(fs=100, window=156, stride=100)',
-                'CutFrequencies(fs=100, window=156, lower=0, upper=100)',
-                'PowerSpectralDensityMean()',
-                'LogTransform()',
-                'TwoDScaler()']),
+                #'BandPass( fs=100, highpass=0.3, lowpass=45)',
+                'Spectrogram(fs=100, window=50, stride=25)',
+                #'CutFrequencies(fs=100, window=50, lower=0, upper=100)',
+                'TwoDScaler()'
+                ]),
+            ('E1-M2', [
+                'BandPass(fs=100, highpass=0.3, lowpass=12)',
+                'Spectrogram(fs=100, window=50, stride=25)',
+               # 'CutFrequencies(fs=100, window=50, lower=0, upper=100)',
+                #'PowerSpectralDensityMean()',
+                #'LogTransform()',
+                'TwoDScaler()'
+                ]),
         ]
     }
 
@@ -187,11 +194,13 @@ def main(train_dir, val_dir, ts, feats, nclasses, neighbors, seed, _run):
 
     train_loader, inputdim = utils.load_data(train_dir, nclasses,
                                                      feats, neighbors,
+                                                    PhysionetChallenge18,
                                                      ts['batch_size'],
                                                      ts['cuda'],
                                                      verbose=True)
     val_loader, _ = utils.load_data(val_dir, nclasses, feats,
-                                            neighbors, ts['batch_size'],
+                                            neighbors, PhysionetChallenge18,
+                                    ts['batch_size'],
                                             ts['cuda'])
 
     if ts['model'] == 'SleepStage':
