@@ -4,7 +4,7 @@ import numpy as np
 import glob
 from datetime import datetime
 from mne.io import read_raw_edf
-from sleeplearning.lib.loaders.subject import Subject
+from sleeplearning.lib.loaders.baseloader import BaseLoader
 
 ann2label = {
     "Sleep stage W": 0,
@@ -37,7 +37,7 @@ stage_dict = {
 EPOCH_SEC_SIZE = 30
 
 
-class SleepEDF(Subject):
+class SleepEDF(BaseLoader):
     """
     Loader for https://www.physionet.org/physiobank/database/sleep-edfx/ files.
     """

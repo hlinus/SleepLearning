@@ -6,12 +6,12 @@ matplotlib.use("Agg")
 from wfdb import rdrecord
 from wfdb import rdann
 import os
-from sleeplearning.lib.loaders.subject import Subject
+from sleeplearning.lib.loaders.baseloader import BaseLoader
 
 EPOCH_TIME = 30
 
 
-class PhysionetChallenge18(Subject):
+class PhysionetChallenge18(BaseLoader):
     """
     Loader for PhysioNet/CinC Challenge 2018 (https://physionet.org/physiobank/database/challenge/2018/)
     """

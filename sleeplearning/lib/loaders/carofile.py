@@ -4,10 +4,10 @@ import scipy.io
 from scipy import signal
 from typing import Tuple
 
-from sleeplearning.lib.loaders.subject import Subject
+from sleeplearning.lib.loaders.baseloader import BaseLoader
 
 
-class Carofile(Subject):
+class Carofile(BaseLoader):
     def __init__(self, path: str, epoch_length: int = 20, verbose: bool = False):
         super().__init__(path, epoch_length)
         psg_dict = {'EEG': 'EEG_data_filt', 'EOGR': 'EOGR_data_filt',

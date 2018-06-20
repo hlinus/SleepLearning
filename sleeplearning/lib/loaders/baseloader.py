@@ -5,7 +5,7 @@ import numpy as np
 from scipy import signal
 
 
-class Subject(ABC):
+class BaseLoader(ABC):
     """Base class which contains the data related to a single day/night of of a
     single subject. There is a classmethod for every support file format which
     can be used to read in the file and store it as sleeplearning object. To
