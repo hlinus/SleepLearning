@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import signal
+from scipy.signal import firwin, lfilter
 
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline, FeatureUnion
@@ -57,6 +58,29 @@ class ChannelSelector(BaseEstimator, TransformerMixin):
 
     def transform(self, x):
         return x[self.channel]
+
+
+class BandPass(BaseEstimator, TransformerMixin):
+    """
+        Zero mean and unit variance scaler
+    """
+
+    def __init__(self, fs, lowpass, highpass):
+        self.lowpass = lowpass
+        self.highpass = highpass
+        self.fs = fs
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, x):
+        Fs = self.fs / 2.0
+        one = np.array(1)
+        fir = firwin(51, [self.highpass / Fs, self.lowpass / Fs], pass_zero=False,
+                      window='hamming', scale=True)
+        x = lfilter(fir, one, x)
+        return x
+
 
 
 class TwoDScaler(BaseEstimator, TransformerMixin):
