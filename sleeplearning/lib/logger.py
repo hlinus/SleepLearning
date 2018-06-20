@@ -7,7 +7,7 @@ import itertools
 import tfplot
 from sklearn.metrics import confusion_matrix
 
-from sleeplearning.lib.loaders.subject import Subject
+from sleeplearning.lib.loaders.baseloader import BaseLoader
 
 try:
     from StringIO import StringIO  # Python 2.7
@@ -81,7 +81,7 @@ class Logger(object):
             for i in np.unique(train_ds.labels):
                 for k, j in enumerate(np.where(train_ds.labels == i)[0][:50]):
                     img = train_ds[j][0].data.numpy()[0]
-                    self.image_summary('feature/'+Subject.sleep_stages_labels[i], img, k, cmap='jet')
+                    self.image_summary('feature/' + BaseLoader.sleep_stages_labels[i], img, k, cmap='jet')
 
     def image_summary(self, tag, img, step, vmin=None, vmax=None, cmap=None):
         """Log one image."""
