@@ -90,9 +90,10 @@ def cfg():
         'model': 'DeepFeatureNet',
         'batch_size_train': 32,
         'batch_size_val': 128,
-        'epochs': 25,
+        'epochs': 50,
         'optim': 'adam,lr=0.00005',
         'cuda': torch.cuda.is_available(),
+        'weighted_loss': True
     }
     seed = 42
 
@@ -115,7 +116,7 @@ def main(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
     torch.cuda.manual_seed(seed)
 
     print("\nTRAIN SUBJECTS: ")
-    train_loader, inputdim = utils.load_data(train_dir, nclasses, feats,
+    train_loader, dataset_info = utils.load_data(train_dir, nclasses, feats,
                                              neighbors, 1000,
                                              PhysionetChallenge18,
                                              ts['batch_size_train'], ts['cuda'],
@@ -127,15 +128,24 @@ def main(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
                                     verbose=True)
 
     if ts['model'] == 'SleepStage':
-        model = SleepStage(nclasses, inputdim)
+        model = SleepStage(nclasses, dataset_info['input_shape'])
     elif ts['model'] == 'DeepFeatureNet':
-        model = DeepFeatureNet(nclasses, inputdim)
+        model = DeepFeatureNet(nclasses, dataset_info['input_shape'])
     else:
         raise ValueError(ts['model'] + ' does not exist!')
     optim_fn, optim_params = utils.get_optimizer(ts['optim'])
 
     optimizer = optim_fn(model.parameters(), **optim_params)
-    criterion = torch.nn.CrossEntropyLoss()
+    if ts['weighted_loss']:
+        # TODO: assure weights are in correct order
+        counts = np.fromiter(dataset_info['class_distribution'].values(),
+                             dtype=int)
+        normed_counts = counts / np.min(counts)
+        weights = np.reciprocal(normed_counts).astype(np.float32)
+        print("weighted loss: ", weights)
+    else:
+        weights = np.ones(nclasses)
+    criterion = torch.nn.CrossEntropyLoss(weight=torch.from_numpy(weights))
     logger = Logger(log_dir)
 
     if ts['cuda']:

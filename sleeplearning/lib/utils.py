@@ -28,7 +28,7 @@ def load_data(dir: os.path, num_labels: int, feats: dict, neighbors: int,
                               max_subjects, loader, verbose=verbose)
     if verbose: print(ds.dataset_info)
     dataloader = DataLoader(ds, batch_size=batch_size, shuffle=True, **kwargs)
-    return dataloader, ds.dataset_info['input_shape']
+    return dataloader, ds.dataset_info
 
 
 def create_dataset(subjects: List[BaseLoader], outdir: str):
@@ -133,20 +133,12 @@ class SleepLearningDataset(object):
         self.dataset_info = {}
         class_distribution_dict = {}
         for i in range(len(class_distribution)):
-            class_distribution_dict[BaseLoader.sleep_stages_labels[i]] = int(
-                class_distribution[i])
+            if class_distribution[i] > 0:
+                class_distribution_dict[BaseLoader.sleep_stages_labels[i]] = \
+                    int(class_distribution[i])
         self.dataset_info['subjects'] = subject_labels
         self.dataset_info['class_distribution'] = class_distribution_dict
         self.dataset_info['input_shape'] = feature_matrix[0].shape
-
-
-        # TODO: Fix weighting
-        self.weights = np.zeros(len(self.dataset_info['class_distribution'].keys()))
-        total_classes = 0.0
-        for i, (k, v) in enumerate(self.dataset_info['class_distribution'].items()):
-            total_classes += v
-            self.weights[i] = v+1  # smooth
-        self.weights = total_classes/self.weights
 
     def __getitem__(self, index):
         sample = self.X[index]
