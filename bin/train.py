@@ -139,13 +139,14 @@ def main(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
     if ts['weighted_loss']:
         # TODO: assure weights are in correct order
         counts = np.fromiter(dataset_info['class_distribution'].values(),
-                             dtype=int)
+                             dtype=float)
         normed_counts = counts / np.min(counts)
         weights = np.reciprocal(normed_counts).astype(np.float32)
-        print("weighted loss: ", weights)
+        print("\nCLASS WEIGHTS (LOSS): ", weights)
     else:
         weights = np.ones(nclasses)
-    criterion = torch.nn.CrossEntropyLoss(weight=torch.from_numpy(weights))
+    weights = torch.from_numpy(weights).type(torch.FloatTensor)
+    criterion = torch.nn.CrossEntropyLoss(weight=weights)
     logger = Logger(log_dir)
 
     if ts['cuda']:
