@@ -1,30 +1,24 @@
 import numpy as np
 from scipy import signal
 from scipy.signal import firwin, lfilter
-
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline, FeatureUnion
-from typing import List, Tuple
 
 
-class FeatureExtractor():
+class FeatureExtractor(object):
     def __init__(self, features: dict):
         pipelines = []
-
-        #f = np.fft.rfftfreq(window, 1.0 / sampling_rate)
         outdim = None
         f = None
-        #outdim = len(np.where(np.logical_and(f >= params['cut_lower'],
-        #                                f<=params['cut_upper']))[0])
 
         for i, (channel, channel_opts) in enumerate(features['channels']):
-            transformers = []
-            transformers.append(('selector', ChannelSelector(channel)))
+            transformers = [('selector', ChannelSelector(channel))]
             for j, t in enumerate(channel_opts):
                 extractor = eval(t)
                 if t.startswith("Spectrogram"):
                     between_brackets = t[t.find("(") + 1:t.find(")")].split(',')
-                    opts = dict([(k.strip(), int(v)) for (k,v) in [x.split('=') for x in between_brackets]])
+                    opts = dict([(k.strip(), int(v)) for (k,v)
+                                 in [x.split('=') for x in between_brackets]])
                     if f is None:
                         f = np.fft.rfftfreq(opts['window'], 1.0 / opts['fs'])
                 elif t.startswith("Cut"):
@@ -49,7 +43,6 @@ class ChannelSelector(BaseEstimator, TransformerMixin):
     """
         Selects channel for the following transforms
     """
-
     def __init__(self, channel: str):
         self.channel = channel
 
@@ -57,14 +50,15 @@ class ChannelSelector(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, x):
-        return x[self.channel]
+        x = x[self.channel]
+        x = x[:, np.newaxis, :]
+        return x
 
 
 class BandPass(BaseEstimator, TransformerMixin):
     """
         Zero mean and unit variance scaler
     """
-
     def __init__(self, fs, lowpass, highpass):
         self.lowpass = lowpass
         self.highpass = highpass
@@ -75,10 +69,10 @@ class BandPass(BaseEstimator, TransformerMixin):
 
     def transform(self, x):
         Fs = self.fs / 2.0
-        one = np.array(1)
+        # one = np.array(1)
         fir = firwin(51, [self.highpass / Fs, self.lowpass / Fs], pass_zero=False,
                       window='hamming', scale=True)
-        x = lfilter(fir, one, x)
+        x = lfilter(fir, 2, x)
         return x
 
 
@@ -112,9 +106,8 @@ class OneDScaler(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, x):
-        norm = (x - np.mean(x, axis=1, keepdims=True)) \
-               / (np.std(x, axis=1, keepdims=True) + 1e-4)
-        norm = np.expand_dims(norm, axis=1)
+        norm = (x - np.mean(x, axis=2, keepdims=True)) \
+               / (np.std(x, axis=2, keepdims=True) + 1e-4)
         return norm
 
 
@@ -133,7 +126,8 @@ class Spectrogram(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, x):
-        psg = x
+        psg = x[:,0,:]
+        #psg = x
         padding = self.window // 2 - self.stride // 2
         psg = np.pad(psg, pad_width=((0, 0), (padding, padding)), mode='edge')
         f, t, sxx = signal.spectrogram(psg, fs=self.sampling_rate,
