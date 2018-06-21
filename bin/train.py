@@ -8,25 +8,24 @@ import numpy as np
 
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
-from sleeplearning.lib.models.deep_sleep_net import DeepSleepNet
+from sleeplearning.lib.models.deep_sleep_net import DeepFeatureNet
 from sleeplearning.lib.models.sleep_stage import SleepStage
 
 from sleeplearning.lib.base import Base
 from sleeplearning.lib.logger import Logger
 import sleeplearning.lib.utils as utils
-import sleeplearning.lib.loaders as loaders
 from sleeplearning.lib.loaders.physionet_challenge18 import PhysionetChallenge18
 carods_ingredient = Ingredient('carods')
 physiods_ingredient = Ingredient('physiods')
 ex = Experiment(base_dir=os.path.join(root_dir, 'sleeplearning', 'lib'))
 log_base_dir = os.path.join('..', 'logs', platform.node())
-#ex.observers.append(FileStorageObserver.create(log_base_dir))
+ex.observers.append(FileStorageObserver.create(log_base_dir))
 
 
 @ex.named_config
-def physio_chal18():
+def physio18_animal():
     # default dataset settings
-    train_dir = os.path.join('../../../physionet-challenge-train/debug')
+    #train_dir = os.path.join('../../../physionet-challenge-train/debug')
     val_dir = os.path.join('../../../physionet-challenge-train/debug')
 
     feats = {
@@ -34,146 +33,64 @@ def physio_chal18():
             ('C4-M1', [
                 #'BandPass( fs=100, highpass=0.3, lowpass=45)',
                 'Spectrogram(fs=100, window=50, stride=25)',
-                #'CutFrequencies(fs=100, window=50, lower=0, upper=100)',
+                #'LogTransform()',
                 'TwoDScaler()'
                 ]),
             ('F3-M2', [
                 #'BandPass( fs=100, highpass=0.3, lowpass=45)',
                 'Spectrogram(fs=100, window=50, stride=25)',
-                #'CutFrequencies(fs=100, window=50, lower=0, upper=100)',
+                #'LogTransform()',
                 'TwoDScaler()'
                 ]),
             ('E1-M2', [
-                'BandPass(fs=100, highpass=0.3, lowpass=12)',
+                #'BandPass(fs=100, highpass=0.3, lowpass=12)',
                 'Spectrogram(fs=100, window=50, stride=25)',
-               # 'CutFrequencies(fs=100, window=50, lower=0, upper=100)',
-                #'PowerSpectralDensityMean()',
                 #'LogTransform()',
                 'TwoDScaler()'
                 ]),
         ]
     }
 
-
 @ex.named_config
-def sleepedfminideepsleep():
+def physio18_dfn():
     # default dataset settings
-    train_dir = os.path.join('sleepedfmini', 'train')
-    val_dir = os.path.join('sleepedfmini', 'val')
+    train_dir = os.path.join('../../../physionet-challenge-train/debug')
+    val_dir = os.path.join('../../../physionet-challenge-train/validation')
 
     feats = {
-        'sampling_rate': 100,
-        'window': 156,
-        'stride': 100,
-        'channels': {
-            'EEG-Fpz-Cz': {
-                # 'spectrogram' : {'fs': 100, 'window': 156, 'stride': 100}
-                # 'cut' : {'lower': 0, 'upper': 100}
-                # 'psd' : {'type': 'mean'}
-                'log': False,
-                'scale': '1D'
-            }
-        }
-    }
-
-@ex.named_config
-def sleepedfmini():
-    # default dataset settings
-    train_dir = os.path.join('sleepedfmini', 'train')
-    val_dir = os.path.join('sleepedfmini', 'val')
-
-    feats = {
-        'sampling_rate': 100,
-        'window': 156,
-        'stride': 100,
-        'channels': {
-            'EEG-Fpz-Cz': {
-                'spectrogram' : {'fs': 100, 'window': 156, 'stride': 100},
-                'cut' : {'lower': 0, 'upper': 100},
-                'log': False,
-                'scale': '1D'
-            }
-        }
-    }
-
-
-
-@ex.named_config
-def sleepedf():
-    # default dataset settings
-    train_dir = os.path.join('sleepedf', 'train')
-    val_dir = os.path.join('sleepedf', 'val')
-
-    feats = {
-        'sampling_rate': 100,
-        'window': 156,
-        'stride': 100,
-        'channels': {
-            'EEG-Fpz-Cz': {
-                #'spectrogram' : {'fs': 100, 'window': 156, 'stride': 100}
-                # 'cut' : {'lower': 0, 'upper': 100}
-                #'psd' : {'type': 'mean'}
-                'log': False,
-                'scale': '1D'
-            }
-        }
-    }
-
-
-@ex.named_config
-def carods():
-    # default dataset settings
-    train_dir = os.path.join('newDS', 'train')
-    val_dir = os.path.join('newDS', 'test')
-
-    feats = {
-        'sampling_rate': 100,
-        'window': 156,
-        'stride': 100,
-        'channels': {
-            'EEG': {
-                'cut_lower': 0,
-                'cut_upper': 25,
-                'psd': 'none',
-                'log': True,
-                'scale': '2D'
-            },
-            'EMG': {
-                'cut_lower': 0,
-                'cut_upper': 60,
-                'psd': 'mean',
-                'log': True,
-                'scale': '2D'
-            },
-            'EOGL': {
-                'cut_lower': 0,
-                'cut_upper': 60,
-                'psd': 'mean',
-                'log': True,
-                'scale': '2D'
-            },
-            'EOGR': {
-                'cut_lower': 0,
-                'cut_upper': 60,
-                'psd': 'mean',
-                'log': True,
-                'scale': '2D'
-            }
-        }
+        'channels': [
+            ('F3-M2', [
+                #'BandPass( fs=100, highpass=0.3, lowpass=45)',
+                #'LogTransform()',
+                'OneDScaler()'
+                ]),
+            ('C4-M1', [
+                # 'BandPass( fs=100, highpass=0.3, lowpass=45)',
+                # 'LogTransform()',
+                'OneDScaler()'
+            ]),
+            ('E1-M2', [
+                # 'BandPass( fs=100, highpass=0.3, lowpass=45)',
+                # 'LogTransform()',
+                'OneDScaler()'
+            ]),
+        ]
     }
 
 
 @ex.config
 def cfg():
+    cmt = '' # comment
     # feature settings
     nclasses = 5
     neighbors = 0
-
+    num_val_subjects = 2
     # training settings
     ts = {
-        'model': 'SleepStage',
-        'batch_size': 32,
-        'epochs': 50,
+        'model': 'DeepFeatureNet',
+        'batch_size_train': 32,
+        'batch_size_val': 128,
+        'epochs': 25,
         'optim': 'adam,lr=0.00005',
         'cuda': torch.cuda.is_available(),
     }
@@ -182,9 +99,14 @@ def cfg():
 
 
 @ex.automain
-def main(train_dir, val_dir, ts, feats, nclasses, neighbors, seed, _run):
-    options = '_'.join(_run.meta_info['options']['UPDATE'] if 'UPDATE' in _run.meta_info['options'] else 'grid')
+def main(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
+         seed, _run):
+    l = _run.meta_info['options']['UPDATE'] if 'UPDATE' in \
+                                               _run.meta_info['options'] \
+                                            else 'grid'
+    options = '_'.join([x for x in l if 'train_dir' not in x and 'val_dir' not in x])
     log_dir = os.path.join(log_base_dir, str(_run._id), options)
+    print("log_dir: ", log_dir)
     print("seed: ", seed)
 
     # fix seed
@@ -192,24 +114,26 @@ def main(train_dir, val_dir, ts, feats, nclasses, neighbors, seed, _run):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
-    train_loader, inputdim = utils.load_data(train_dir, nclasses,
-                                                     feats, neighbors,
-                                                    PhysionetChallenge18,
-                                                     ts['batch_size'],
-                                                     ts['cuda'],
-                                                     verbose=True)
-    val_loader, _ = utils.load_data(val_dir, nclasses, feats,
-                                            neighbors, PhysionetChallenge18,
-                                    ts['batch_size'],
-                                            ts['cuda'])
+    print("\nTRAIN SUBJECTS: ")
+    train_loader, inputdim = utils.load_data(train_dir, nclasses, feats,
+                                             neighbors, 1000,
+                                             PhysionetChallenge18,
+                                             ts['batch_size_train'], ts['cuda'],
+                                             verbose=True)
+    print("\nVALIDATION SUBJECTS: ")
+    val_loader, _ = utils.load_data(val_dir, nclasses, feats, neighbors,
+                                    num_val_subjects, PhysionetChallenge18,
+                                    ts['batch_size_val'], ts['cuda'],
+                                    verbose=True)
 
     if ts['model'] == 'SleepStage':
         model = SleepStage(nclasses, inputdim)
+    elif ts['model'] == 'DeepFeatureNet':
+        model = DeepFeatureNet(nclasses, inputdim)
     else:
-        model = DeepSleepNet(nclasses, inputdim)
+        raise ValueError(ts['model'] + ' does not exist!')
     optim_fn, optim_params = utils.get_optimizer(ts['optim'])
 
-    # TODO: recheck if this works
     optimizer = optim_fn(model.parameters(), **optim_params)
     criterion = torch.nn.CrossEntropyLoss()
     logger = Logger(log_dir)

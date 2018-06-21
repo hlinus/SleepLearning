@@ -12,20 +12,22 @@ from typing import List
 import glob
 from sleeplearning.lib.feature_extractor import FeatureExtractor
 from sleeplearning.lib.loaders import baseloader
+from sleeplearning.lib.loaders.physionet_challenge18 import PhysionetChallenge18
+
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 from sleeplearning.lib.loaders.baseloader import BaseLoader
 
 
-def load_data(dir: os.path, num_labels: int, feats: dict, neighbors: int, loader: baseloader,
-              batch_size, cuda, verbose = False):
+def load_data(dir: os.path, num_labels: int, feats: dict, neighbors: int,
+              max_subjects: int = 1e3, loader: baseloader = PhysionetChallenge18,
+              batch_size: int = 32, cuda: bool = True, verbose = False):
     kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
     ds = SleepLearningDataset(dir, num_labels,
-                                    FeatureExtractor(feats).get_features(),
-                                    neighbors, loader, verbose=verbose)
+                              FeatureExtractor(feats).get_features(), neighbors,
+                              max_subjects, loader, verbose=verbose)
     if verbose: print(ds.dataset_info)
-    dataloader = DataLoader(ds, batch_size=batch_size,
-                              shuffle=True, **kwargs)
+    dataloader = DataLoader(ds, batch_size=batch_size, shuffle=True, **kwargs)
     return dataloader, ds.dataset_info['input_shape']
 
 
@@ -54,7 +56,8 @@ class SleepLearningDataset(object):
     """Sleep Learning dataset."""
 
     def __init__(self, foldr: str, num_labels: int, feature_extractor,
-                 neighbors, loader, discard_arts=True, transform=None, verbose=False):
+                 neighbors, max_subjects, loader, discard_arts=True,
+                 transform=None, verbose=False):
         assert(neighbors % 2 == 0)
 
         if num_labels == 5:
@@ -76,7 +79,7 @@ class SleepLearningDataset(object):
             #os.makedirs(self.dir)
             labels = np.array([], dtype=int)
             # TODO: Replace with csv
-            subject_files = sorted(os.listdir(foldr))
+            subject_files = sorted(os.listdir(foldr))[:max_subjects]
             class_distribution = np.zeros(
                 len(BaseLoader.sleep_stages_labels.keys()), dtype=int)
             #subject_labels = []
