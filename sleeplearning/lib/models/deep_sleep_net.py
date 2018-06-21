@@ -1,5 +1,4 @@
 import torch
-
 from torch import nn
 from torch.nn.init import xavier_normal
 import torch.nn.functional as F
@@ -29,9 +28,9 @@ class Conv1dLayer(nn.Module):
         return x
 
 
-class DeepSleepNet(nn.Module):
+class DeepFeatureNet(nn.Module):
     def __init__(self, num_classes: int, input_shape: tuple):
-        super(DeepSleepNet, self).__init__()
+        super(DeepFeatureNet, self).__init__()
         # left side
         self.left = nn.Sequential(
             Conv1dLayer(input_shape[0], filter_size=50, n_filters=64, stride=6),
@@ -75,9 +74,7 @@ class DeepSleepNet(nn.Module):
         right = self.right(x) #self.right(x)
         y = [left.view(left.size(0), -1), right.view(right.size(0), -1)]
         x = torch.cat(y, 1)
-
         x = F.dropout(x, p=.5)
-
         #x = x.view(x.size(0), -1)
         x = self.fc1(x)
         return x
