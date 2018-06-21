@@ -1,12 +1,12 @@
-import matplotlib
 import tensorflow as tf
 import numpy as np
 import scipy.misc
-from textwrap import wrap
 import itertools
 import tfplot
-from sklearn.metrics import confusion_matrix
-
+from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from sleeplearning.lib.loaders.baseloader import BaseLoader
 
 try:
@@ -27,52 +27,56 @@ class Logger(object):
             value=[tf.Summary.Value(tag=tag, simple_value=value)])
         self.writer.add_summary(summary, step)
 
-    def cm_summary(self, correct_labels, predict_labels, step, normalize=True):
+    def cm_summary(self, prediction, truth, tag, step, classes):
         """
         Parameters:
             correct_labels                  : These are your true classification categories.
             predict_labels                  : These are you predicted classification categories
             step                            : Training step (batch/epoch)
         """
-        # TODO: fix for only 3 labels
+        cm = confusion_matrix(truth, prediction, labels=range(len(classes)))
+        num_classes = cm.shape[0]
+        per_class_metrics = np.array(
+            precision_recall_fscore_support(truth, prediction, beta=1.0,
+                                            labels=range(
+                                                len(classes)))).T.round(2)
+        cm_norm = cm.astype('float') * 1 / cm.sum(axis=1)[:, np.newaxis]
+        cm_norm = np.nan_to_num(cm_norm, copy=True)
 
-        cm = confusion_matrix(correct_labels, predict_labels)
-        number_format = 'd'
-        if normalize:
-            cm = cm.astype('float') * 1 / cm.sum(axis=1)[:, np.newaxis]
-            cm = np.nan_to_num(cm, copy=True)
-            number_format = '.2f'
-            #cm = cm.astype('int')
-
-        np.set_printoptions(precision=2)
-        ###fig, ax = matplotlib.figure.Figure()
-
-        fig = matplotlib.figure.Figure(figsize=(3, 3), dpi=320, facecolor='w',
-                                       edgecolor='k')
+        fig = plt.figure(figsize=(3, 2), dpi=320, facecolor='w',
+                         edgecolor='k')
         ax = fig.add_subplot(1, 1, 1)
-        im = ax.imshow(cm, cmap='Oranges')
-        classes = ['W', 'N1', 'N2', 'N3', 'REM']
+        im = ax.imshow(
+            np.concatenate((cm, np.zeros((len(classes), 4))), axis=1),
+            cmap='Oranges')
+        classes += ['PR', 'RE', 'F1', 'S']
+        xtick_marks = np.arange(len(classes))
+        ytick_marks = np.arange(len(classes) - 4)
 
-        tick_marks = np.arange(len(classes))
-
-        ax.set_xlabel('Predicted', fontsize=10, weight='bold')
-        ax.set_xticks(tick_marks)
-        c = ax.set_xticklabels(classes, fontsize=8, rotation=-90, ha='center')
-        ax.xaxis.set_label_position('bottom')
-        ax.xaxis.tick_bottom()
-
-        ax.set_ylabel('True Label', fontsize=10, weight='bold')
-        ax.set_yticks(tick_marks)
-        ax.set_yticklabels(classes, fontsize=8, va='center')
+        ax.set_xlabel('Predicted', fontsize=6, weight='bold')
+        ax.set_xticks(xtick_marks)
+        c = ax.set_xticklabels(classes, fontsize=4, ha='center')
+        ax.xaxis.set_label_position('top')
+        ax.xaxis.tick_top()
+        ax.set_ylabel('True Label', fontsize=6, weight='bold')
+        ax.set_yticks(ytick_marks)
+        ax.set_yticklabels(classes[:-4], fontsize=4, va='center')
         ax.yaxis.set_label_position('left')
         ax.yaxis.tick_left()
 
         for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-            ax.text(j, i, format(cm[i, j], number_format) if cm[i, j] != 0 else '.',
-                    horizontalalignment="center", fontsize=8,
+            ax.text(j, i, '{}\n({:.2f})'.format(cm[i, j], cm_norm[i, j]),
+                    horizontalalignment="center", fontsize=2,
+                    verticalalignment='center', color="black")
+        for i, j in itertools.product(range(cm.shape[0]),
+                                      range(cm.shape[1], cm.shape[1] + 4)):
+            val = per_class_metrics[i, j - num_classes]
+            ax.text(j, i, val if j != cm.shape[1] + 3 else int(val),
+                    horizontalalignment="center", fontsize=2,
                     verticalalignment='center', color="black")
         fig.set_tight_layout(True)
-        summary = tfplot.figure.to_summary(fig, tag='cm')
+        summary = tfplot.figure.to_summary(fig, tag=tag)
+        plt.close()
         self.writer.add_summary(summary, step)
 
     def log_2D_features(self, train_ds):

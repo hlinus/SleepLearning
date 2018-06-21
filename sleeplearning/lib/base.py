@@ -65,6 +65,8 @@ class Base(object):
         losses = AverageMeter()
         top1 = AverageMeter()
         top2 = AverageMeter()
+        predictions = np.array([], dtype=int)
+        targets = np.array([], dtype=int)
 
         end = time.time()
         for batch_idx, (data, target) in enumerate(train_loader):
@@ -77,7 +79,11 @@ class Base(object):
             loss = self.criterion(output, target)
 
             # measure accuracy and record loss
-            (prec1, prec2), _ = self.accuracy_(output, target, topk=(1, 2))
+            (prec1, prec2), prediction = self.accuracy_(output, target, topk=(1, 2))
+
+            predictions = np.append(predictions, prediction)
+            targets = np.append(targets, target.data.cpu().numpy())
+
             losses.update(loss.item(), data.size(0))
             top1.update(prec1, data.size(0))
             top2.update(prec2, data.size(0))
@@ -87,16 +93,18 @@ class Base(object):
             loss.backward()
             self.optimizer.step()
 
-            # log the loss
-            if self.logger is not None:
-                step = (self.nepoch - 1) * len(train_loader) + batch_idx
-                self.logger.scalar_summary('loss/train',loss, step)
-                self.logger.scalar_summary('acc/train', prec1, step)
-
-
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
+
+        # log accuracy and confusion matrix
+        if self.logger is not None:
+            self.logger.cm_summary(predictions, targets, 'cm/train',
+                                   self.nepoch - 1,
+                                   ['W', 'N1', 'N2', 'N3', 'REM'])
+            self.logger.scalar_summary('acc/train', top1.avg, self.nepoch - 1)
+            self.logger.scalar_summary('loss/train', losses.avg,
+                                       self.nepoch - 1)
 
         print('Train: [{0}]x[{1}/{1}]\t'
               'Time {batch_time.sum:.1f}\t'
@@ -139,20 +147,15 @@ class Base(object):
             top1.update(prec1, data.size(0))
             top2.update(prec2, data.size(0))
 
-            # log the loss and accuracy
-            if self.logger is not None:
-                step = (self.nepoch - 2)*len(val_loader)+batch_idx
-                self.logger.scalar_summary('loss/val', loss, step)
-                self.logger.scalar_summary('acc/val', prec1, step)
-
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
 
         # log accuracy and confusion matrix
         if self.logger is not None:
-            self.logger.cm_summary(targets, predictions, self.nepoch-1)
-            self.logger.scalar_summary('acc/val_epoch', top1.avg, self.nepoch-1)
+            self.logger.cm_summary(predictions, targets, 'cm/val', self.nepoch-1, ['W','N1','N2','N3', 'REM'])
+            self.logger.scalar_summary('acc/val', top1.avg, self.nepoch-1)
+            self.logger.scalar_summary('loss/val', losses.avg, self.nepoch - 1)
 
         print('Val:  [{0}/{0}]\t\t'
               'Time {batch_time.sum:.1f}\t'
