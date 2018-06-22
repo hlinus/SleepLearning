@@ -11,6 +11,7 @@ dependencies:
   - pip:
     - wfdb==2.1.1
     - sacred==0.7.3
+    - pymongo==3.6.1
     - mne==0.16.1
     - tensorflow==1.8
     - git+https://github.com/wookayin/tensorflow-plot.git@master
