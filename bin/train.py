@@ -2,9 +2,10 @@ import os
 import sys
 import torch
 from sacred import Experiment, Ingredient
-from sacred.observers import FileStorageObserver
+from sacred.observers import FileStorageObserver, MongoObserver
 import platform
 import numpy as np
+from sacred.stflow import LogFileWriter
 
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
@@ -18,8 +19,9 @@ from sleeplearning.lib.loaders.physionet_challenge18 import PhysionetChallenge18
 carods_ingredient = Ingredient('carods')
 physiods_ingredient = Ingredient('physiods')
 ex = Experiment(base_dir=os.path.join(root_dir, 'sleeplearning', 'lib'))
-log_base_dir = os.path.join('..', 'logs', platform.node())
-ex.observers.append(FileStorageObserver.create(log_base_dir))
+ex.observers.append(MongoObserver.create(
+    url='mongodb://toor:y0qXDe3qumoawG0rPfnS@cab-e81-31/admin?authMechanism=SCRAM-SHA-1',
+    db_name='sacred'))
 
 
 @ex.named_config
@@ -90,6 +92,7 @@ def cfg():
         'model': 'DeepFeatureNet',
         'batch_size_train': 32,
         'batch_size_val': 128,
+        'dropout': .5,
         'epochs': 50,
         'optim': 'adam,lr=0.00005',
         'cuda': torch.cuda.is_available(),
@@ -98,17 +101,14 @@ def cfg():
     seed = 42
 
 
-
-@ex.automain
-def main(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
+@ex.main
+def train(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
          seed, _run):
-    l = _run.meta_info['options']['UPDATE'] if 'UPDATE' in \
-                                               _run.meta_info['options'] \
-                                            else 'grid'
-    options = '_'.join([x for x in l if 'train_dir' not in x and 'val_dir' not in x])
-    log_dir = os.path.join(log_base_dir, str(_run._id), options)
+    log_dir = os.path.join(root_dir, 'logs', str(_run._id))
     print("log_dir: ", log_dir)
     print("seed: ", seed)
+    with LogFileWriter(ex):
+        logger = Logger(log_dir, _run)
 
     # fix seed
     np.random.seed(seed)
@@ -130,7 +130,7 @@ def main(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
     if ts['model'] == 'SleepStage':
         model = SleepStage(nclasses, dataset_info['input_shape'])
     elif ts['model'] == 'DeepFeatureNet':
-        model = DeepFeatureNet(nclasses, dataset_info['input_shape'])
+        model = DeepFeatureNet(nclasses, dataset_info['input_shape'], ts['dropout'])
     else:
         raise ValueError(ts['model'] + ' does not exist!')
     optim_fn, optim_params = utils.get_optimizer(ts['optim'])
@@ -147,7 +147,7 @@ def main(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
         weights = np.ones(nclasses)
     weights = torch.from_numpy(weights).type(torch.FloatTensor)
     criterion = torch.nn.CrossEntropyLoss(weight=weights)
-    logger = Logger(log_dir)
+
 
     if ts['cuda']:
         model.cuda()
@@ -158,3 +158,10 @@ def main(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
     clf.fit(train_loader, val_loader, max_epoch=ts['epochs'])
 
     return clf.best_acc_
+
+if __name__ == '__main__':
+    args = sys.argv
+    options = '_'.join(
+        [x for x in args[3:] if 'train_dir' not in x and 'val_dir' not in x])
+    args += ['--name', options]
+    ex.run_commandline(argv=args)

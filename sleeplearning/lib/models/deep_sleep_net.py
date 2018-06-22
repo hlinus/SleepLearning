@@ -29,13 +29,14 @@ class Conv1dLayer(nn.Module):
 
 
 class DeepFeatureNet(nn.Module):
-    def __init__(self, num_classes: int, input_shape: tuple):
+    def __init__(self, num_classes: int, input_shape: tuple, dropout: float):
         super(DeepFeatureNet, self).__init__()
+        self.dropout = dropout
         # left side
         self.left = nn.Sequential(
             Conv1dLayer(input_shape[0], filter_size=50, n_filters=64, stride=6),
             nn.MaxPool1d(8, stride=8),
-            nn.Dropout(p=.5),
+            nn.Dropout(p=self.dropout),
             Conv1dLayer(64, filter_size=8,
                         n_filters=128, stride=1),
             Conv1dLayer(128, filter_size=8,
@@ -48,7 +49,7 @@ class DeepFeatureNet(nn.Module):
         self.right = nn.Sequential(
             Conv1dLayer(input_shape[0], filter_size=400, n_filters=64, stride=50),
             nn.MaxPool1d(4, stride=4),
-            nn.Dropout(p=.5),
+            nn.Dropout(p=self.dropout),
             Conv1dLayer(64, filter_size=6,
                         n_filters=128, stride=1),
             Conv1dLayer(128, filter_size=6,
@@ -74,7 +75,7 @@ class DeepFeatureNet(nn.Module):
         right = self.right(x) #self.right(x)
         y = [left.view(left.size(0), -1), right.view(right.size(0), -1)]
         x = torch.cat(y, 1)
-        x = F.dropout(x, p=.5)
+        x = F.dropout(x, p=self.dropout)
         #x = x.view(x.size(0), -1)
         x = self.fc1(x)
         return x
