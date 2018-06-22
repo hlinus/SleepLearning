@@ -100,11 +100,11 @@ class Base(object):
         # log accuracy and confusion matrix
         if self.logger is not None:
             self.logger.cm_summary(predictions, targets, 'cm/train',
-                                   self.nepoch - 1,
+                                   self.nepoch,
                                    ['W', 'N1', 'N2', 'N3', 'REM'])
-            self.logger.scalar_summary('acc/train', top1.avg, self.nepoch - 1)
+            self.logger.scalar_summary('acc/train', top1.avg, self.nepoch)
             self.logger.scalar_summary('loss/train', losses.avg,
-                                       self.nepoch - 1)
+                                       self.nepoch)
 
         print('Train: [{0}]x[{1}/{1}]\t'
               'Time {batch_time.sum:.1f}\t'
