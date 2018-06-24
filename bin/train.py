@@ -151,7 +151,7 @@ def train(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
 
     print("\nTRAINING SET: ")
     train_loader, dataset_info = utils.load_data(train_dir, nclasses, feats,
-                                             neighbors, 1000,
+                                             neighbors, 1000000,
                                              PhysionetChallenge18,
                                              ts['batch_size_train'],
                                              ts['oversample'], ts['cuda'],
@@ -159,7 +159,7 @@ def train(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
     print("\nVAL SET: ")
     val_loader, _ = utils.load_data(val_dir, nclasses, feats, neighbors,
                                     num_val_subjects, PhysionetChallenge18,
-                                    ts['batch_size_val'], ts['cuda'],
+                                    ts['batch_size_val'], False, ts['cuda'],
                                     verbose=True)
 
     if ts['model'] == 'SleepStage':

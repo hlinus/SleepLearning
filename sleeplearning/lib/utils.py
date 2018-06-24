@@ -26,9 +26,9 @@ from sleeplearning.lib.loaders.baseloader import BaseLoader
 
 
 def load_data(dir: os.path, num_labels: int, feats: dict, neighbors: int,
-              max_subjects: int = 1e3, loader: baseloader = PhysionetChallenge18,
-              batch_size: int = 32, oversample: bool = False, cuda: bool = True,
-              verbose = False):
+              max_subjects: int, loader: BaseLoader,
+              batch_size: int, oversample: bool, cuda: bool,
+              verbose):
     kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
     ds = SleepLearningDataset(dir, num_labels,
                               FeatureExtractor(feats).get_features(), neighbors,
