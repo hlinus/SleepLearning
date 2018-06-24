@@ -19,9 +19,10 @@ from sleeplearning.lib.loaders.physionet_challenge18 import PhysionetChallenge18
 carods_ingredient = Ingredient('carods')
 physiods_ingredient = Ingredient('physiods')
 ex = Experiment(base_dir=os.path.join(root_dir, 'sleeplearning', 'lib'))
-ex.observers.append(MongoObserver.create(
-    url='mongodb://toor:y0qXDe3qumoawG0rPfnS@cab-e81-31/admin?authMechanism=SCRAM-SHA-1',
-    db_name='sacred'))
+MONGO_OBSERVER = MongoObserver.create(url='mongodb://toor:y0qXDe3qumoawG0rPfnS'
+                                          '@cab-e81-31/admin?authMechanism'
+                                          '=SCRAM-SHA-1', db_name='sacred')
+ex.observers.append(MONGO_OBSERVER)
 
 
 @ex.named_config
@@ -55,10 +56,6 @@ def physio18_animal():
 
 @ex.named_config
 def physio18_dfn():
-    # default dataset settings
-    train_dir = os.path.join('../../../physionet-challenge-train/debug')
-    val_dir = os.path.join('../../../physionet-challenge-train/validation')
-
     feats = {
         'channels': [
             ('F3-M2', [
@@ -79,32 +76,69 @@ def physio18_dfn():
         ]
     }
 
+@ex.named_config
+def three_channels_noscale():
+    feats = {
+        'channels': [
+            ('F3-M2', []),
+            ('C4-M1', []),
+            ('E1-M2', []),
+        ]
+    }
+
+@ex.named_config
+def three_channels():
+    feats = {
+        'channels': [
+            ('F3-M2', ['OneDScaler()']),
+            ('C4-M1', ['OneDScaler()']),
+            ('E1-M2', ['OneDScaler()']),
+        ]
+    }
+
+@ex.named_config
+def one_channel():
+    feats = {
+        'channels': [
+            ('F3-M2', ['OneDScaler()']),
+        ]
+    }
 
 @ex.config
 def cfg():
-    cmt = '' # comment
+    # comment for this run
+    cmt = ''
+
+    # default dataset settings
+    train_dir = os.path.join('../../../physionet-challenge-train/debug')
+    val_dir = os.path.join('../../../physionet-challenge-train/validation')
+
     # feature settings
     nclasses = 5
     neighbors = 0
-    num_val_subjects = 2
+    num_val_subjects = 40
+
     # training settings
     ts = {
         'model': 'DeepFeatureNet',
         'batch_size_train': 32,
         'batch_size_val': 128,
         'dropout': .5,
-        'epochs': 50,
+        'epochs': 100,
         'optim': 'adam,lr=0.00005',
         'cuda': torch.cuda.is_available(),
-        'weighted_loss': True
+        'weighted_loss': False,
+        'oversample': False
     }
+
+    # seed
     seed = 42
 
 
 @ex.main
 def train(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
          seed, _run):
-    log_dir = os.path.join(root_dir, 'logs', str(_run._id))
+    log_dir = os.path.join(root_dir, 'logs', str(_run._id), _run.experiment_info['name'])
     print("log_dir: ", log_dir)
     print("seed: ", seed)
     with LogFileWriter(ex):
@@ -115,13 +149,14 @@ def train(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
-    print("\nTRAIN SUBJECTS: ")
+    print("\nTRAINING SET: ")
     train_loader, dataset_info = utils.load_data(train_dir, nclasses, feats,
                                              neighbors, 1000,
                                              PhysionetChallenge18,
-                                             ts['batch_size_train'], ts['cuda'],
+                                             ts['batch_size_train'],
+                                             ts['oversample'], ts['cuda'],
                                              verbose=True)
-    print("\nVALIDATION SUBJECTS: ")
+    print("\nVAL SET: ")
     val_loader, _ = utils.load_data(val_dir, nclasses, feats, neighbors,
                                     num_val_subjects, PhysionetChallenge18,
                                     ts['batch_size_val'], ts['cuda'],
@@ -142,12 +177,12 @@ def train(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
                              dtype=float)
         normed_counts = counts / np.min(counts)
         weights = np.reciprocal(normed_counts).astype(np.float32)
-        print("\nCLASS WEIGHTS (LOSS): ", weights)
     else:
         weights = np.ones(nclasses)
+    print("\nCLASS WEIGHTS (LOSS): ", weights)
     weights = torch.from_numpy(weights).type(torch.FloatTensor)
     criterion = torch.nn.CrossEntropyLoss(weight=weights)
-
+    print('\n')
 
     if ts['cuda']:
         model.cuda()
@@ -162,6 +197,6 @@ def train(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
 if __name__ == '__main__':
     args = sys.argv
     options = '_'.join(
-        [x for x in args[3:] if 'train_dir' not in x and 'val_dir' not in x])
+        [x for x in args[2:] if 'train_dir' not in x and 'val_dir' not in x])
     args += ['--name', options]
     ex.run_commandline(argv=args)
