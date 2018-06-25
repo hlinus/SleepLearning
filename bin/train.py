@@ -9,7 +9,7 @@ from sacred.stflow import LogFileWriter
 
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
-from sleeplearning.lib.models.deep_sleep_net import DeepFeatureNet
+from sleeplearning.lib.models.deep_sleep_net import DeepFeatureNet, DeepSleepNet
 from sleeplearning.lib.models.sleep_stage import SleepStage
 
 from sleeplearning.lib.base import Base
@@ -29,7 +29,7 @@ ex.observers.append(MONGO_OBSERVER)
 def physio18_animal():
     # default dataset settings
     #train_dir = os.path.join('../../../physionet-challenge-train/debug')
-    val_dir = os.path.join('../../../physionet-challenge-train/debug')
+    #val_dir = os.path.join('../../../physionet-challenge-train/debug')
 
     feats = {
         'channels': [
@@ -97,6 +97,16 @@ def three_channels():
     }
 
 @ex.named_config
+def three_channels_int16():
+    feats = {
+        'channels': [
+            ('F3-M2', ['ConvToInt16()']),
+            ('C4-M1', ['ConvToInt16()']),
+            ('E1-M2', ['ConvToInt16()']),
+        ]
+    }
+
+@ex.named_config
 def one_channel():
     feats = {
         'channels': [
@@ -104,10 +114,18 @@ def one_channel():
         ]
     }
 
+@ex.named_config
+def one_channel_no_scale():
+    feats = {
+        'channels': [
+            ('F3-M2', []),
+        ]
+    }
+
 @ex.config
 def cfg():
     # comment for this run
-    cmt = ''
+    cmt = 'fixed_cm'
 
     # default dataset settings
     train_dir = os.path.join('../../../physionet-challenge-train/debug')
@@ -122,12 +140,12 @@ def cfg():
     ts = {
         'model': 'DeepFeatureNet',
         'batch_size_train': 32,
-        'batch_size_val': 128,
+        'batch_size_val': 250,
         'dropout': .5,
         'epochs': 100,
         'optim': 'adam,lr=0.00005',
         'cuda': torch.cuda.is_available(),
-        'weighted_loss': False,
+        'weighted_loss': True,
         'oversample': False
     }
 
@@ -166,6 +184,8 @@ def train(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
         model = SleepStage(nclasses, dataset_info['input_shape'])
     elif ts['model'] == 'DeepFeatureNet':
         model = DeepFeatureNet(nclasses, dataset_info['input_shape'], ts['dropout'])
+    elif ts['model'] == 'DeepSleepNet':
+        model = DeepSleepNet(nclasses, dataset_info['input_shape'], ts['dropout'])
     else:
         raise ValueError(ts['model'] + ' does not exist!')
     optim_fn, optim_params = utils.get_optimizer(ts['optim'])
@@ -182,6 +202,8 @@ def train(train_dir, val_dir, num_val_subjects, ts, feats, nclasses, neighbors,
     print("\nCLASS WEIGHTS (LOSS): ", weights)
     weights = torch.from_numpy(weights).type(torch.FloatTensor)
     criterion = torch.nn.CrossEntropyLoss(weight=weights)
+
+    print('\n', model)
     print('\n')
 
     if ts['cuda']:
