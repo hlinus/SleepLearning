@@ -46,15 +46,30 @@ class Base(object):
 
         # Training
         while not stop_train and self.nepoch <= max_epoch:
-            self.trainepoch(train_loader, self.nepoch)
-            accuracy, _ = self.score(val_loader)
-            if accuracy > bestaccuracy:
-                bestaccuracy = accuracy
+            tr_loss, tr_acc, tr_tar, tr_pred = self.trainepoch(train_loader, self.nepoch)
+            val_loss, val_acc, val_tar, val_pred = self.score(val_loader)
+            # log accuracy and confusion matrix
+            if self.logger is not None:
+                self.logger.scalar_summary('acc/train', tr_acc, self.nepoch)
+                self.logger.scalar_summary('loss/train', tr_loss,
+                                           self.nepoch)
+                self.logger.scalar_summary('acc/val', val_acc, self.nepoch)
+                self.logger.scalar_summary('loss/val', val_loss, self.nepoch)
+            if val_acc > bestaccuracy:
+                bestaccuracy = val_acc
                 bestmodel = copy.deepcopy(self.model)
+                self.logger.cm_summary(tr_pred, tr_tar, 'cm/train',
+                                       self.nepoch,
+                                       ['W', 'N1', 'N2', 'N3', 'REM'])
+                self.logger.cm_summary(val_pred, val_tar, 'cm/val',
+                                       self.nepoch,
+                                       ['W', 'N1', 'N2', 'N3', 'REM'])
             elif early_stop:
                 if early_stop_count >= self.tenacity:
                     stop_train = True
                 early_stop_count += 1
+
+            self.nepoch += 1
         self.model = bestmodel
         self.best_acc_ = bestaccuracy
 
@@ -97,15 +112,6 @@ class Base(object):
             batch_time.update(time.time() - end)
             end = time.time()
 
-        # log accuracy and confusion matrix
-        if self.logger is not None:
-            self.logger.cm_summary(predictions, targets, 'cm/train',
-                                   self.nepoch,
-                                   ['W', 'N1', 'N2', 'N3', 'REM'])
-            self.logger.scalar_summary('acc/train', top1.avg, self.nepoch)
-            self.logger.scalar_summary('loss/train', losses.avg,
-                                       self.nepoch)
-
         print('Train: [{0}]x[{1}/{1}]\t'
               'Time {batch_time.sum:.1f}\t'
               'Loss {loss.avg:.2f}\t'
@@ -114,10 +120,9 @@ class Base(object):
             epoch, len(train_loader), batch_time=batch_time,
             loss=losses, top1=top1, top2=top2))
 
-        self.nepoch += 1
-        return losses.vals, top1.vals
+        return losses.avg, top1.avg, targets, predictions
 
-    def score(self, val_loader: DataLoader) -> Tuple[float, np.array]:
+    def score(self, val_loader: DataLoader) -> Tuple[float, float, np.array, np.array]:
         batch_time = AverageMeter()
         losses = AverageMeter()
         top1 = AverageMeter()
@@ -151,12 +156,6 @@ class Base(object):
             batch_time.update(time.time() - end)
             end = time.time()
 
-        # log accuracy and confusion matrix
-        if self.logger is not None:
-            self.logger.cm_summary(predictions, targets, 'cm/val', self.nepoch-1, ['W','N1','N2','N3', 'REM'])
-            self.logger.scalar_summary('acc/val', top1.avg, self.nepoch-1)
-            self.logger.scalar_summary('loss/val', losses.avg, self.nepoch - 1)
-
         print('Val:  [{0}/{0}]\t\t'
               'Time {batch_time.sum:.1f}\t'
               'Loss {loss.avg:.2f}\t'
@@ -165,7 +164,7 @@ class Base(object):
             len(val_loader), batch_time=batch_time,
             loss=losses, top1=top1, top2=top2))
 
-        return top1.avg, predictions
+        return losses.avg, top1.avg, targets, predictions
 
     def predict(self, test_loader):
         self.model.eval()
