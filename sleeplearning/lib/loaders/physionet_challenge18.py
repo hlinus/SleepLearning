@@ -18,7 +18,7 @@ class PhysionetChallenge18(BaseLoader):
     def __init__(self, path: str, epoch_length: int = EPOCH_TIME, verbose: bool = False):
         super().__init__(path, epoch_length)
         filename_base = os.path.basename(os.path.dirname(path + '/'))
-        data = rdrecord(os.path.join(path, filename_base))
+        data = rdrecord(os.path.join(path, filename_base), physical=False)
         annotations = rdann(os.path.join(path, filename_base),
                                  extension='arousal')
         self.sampling_rate_ = annotations.fs
@@ -40,8 +40,8 @@ class PhysionetChallenge18(BaseLoader):
         self.hypnogram = np.repeat(annotations, sleep_stage_durations)
         assert(len(self.hypnogram) == num_labels)
         self.psgs = {}
-        for channel, signal in zip(data.sig_name, data.p_signal.T):
+        for channel, signal in zip(data.sig_name, data.d_signal.T):
             # cut unlabeled signal parts (start and end)
             signal_cut = signal[annotation_times[0]:annotation_times[-1]]
             assert(len(signal_cut)// self.sampling_rate_ // EPOCH_TIME == num_labels)
-            self.psgs[channel] = signal_cut
+            self.psgs[channel] = signal_cut.astype(np.int16)
