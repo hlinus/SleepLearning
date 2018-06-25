@@ -126,16 +126,20 @@ class SleepLearningDataset(object):
                 del psgs_reshaped
                 num_epochs = feature_matrix.shape[0]
 
-                # TODO: neighbors for 1D features
-                if feature_matrix.ndim == 4:
+                if neighbors > 0:
                     # pad with zeros before and after (additional '#neighbors' epochs)
-                    feature_matrix = np.pad(feature_matrix, (
-                        (neighbors // 2, neighbors // 2), (0, 0), (0, 0), (0, 0)),
+                    pad_width = (
+                        (neighbors // 2, neighbors // 2), (0, 0), (0, 0))
+                    concat_axis = 1
+                    if feature_matrix.ndim == 4:
+                        pad_width += ((0, 0),)
+                        concat_axis = 2
+                    feature_matrix = np.pad(feature_matrix, pad_width,
                                             mode='constant')
                     # create samples with neighbors
                     feature_matrix = np.array([np.concatenate(
                         feature_matrix[i - neighbors // 2:i + neighbors // 2 + 1],
-                        axis=2) for i
+                        axis=concat_axis) for i
                         in range(neighbors // 2, num_epochs + neighbors // 2)])
 
                 for e, (sample, label_int) in enumerate(
@@ -172,7 +176,7 @@ class SleepLearningDataset(object):
 
         if self.transform is not None:
             x = self.transform(x)
-        x = torch.from_numpy(x).double()
+        #x = torch.from_numpy(x)#.double()
 
         return x, y_
 
