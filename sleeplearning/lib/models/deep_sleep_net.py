@@ -11,7 +11,6 @@ class Conv1dLayer(nn.Module):
                                stride=stride, bias=False,
                                padding=(filter_size - 1) // 2) # fake 'SAME'
         self.conv1_bn = nn.BatchNorm1d(n_filters)
-
         self.weights_init()
 
     def weights_init(m):
@@ -28,9 +27,9 @@ class Conv1dLayer(nn.Module):
         return x
 
 
-class DeepFeatureNet(nn.Module):
-    def __init__(self, num_classes: int, input_shape: tuple, dropout: float):
-        super(DeepFeatureNet, self).__init__()
+class DeepFeatureNet_(nn.Module):
+    def __init__(self, input_shape: tuple, dropout: float):
+        super(DeepFeatureNet_, self).__init__()
         self.dropout = dropout
         # left side
         self.left = nn.Sequential(
@@ -59,8 +58,6 @@ class DeepFeatureNet(nn.Module):
             nn.MaxPool1d(2, stride=2)
         )
 
-        self.fc1 = nn.Linear(2560, num_classes)
-
         self.weights_init()
 
     def weights_init(m):
@@ -72,10 +69,71 @@ class DeepFeatureNet(nn.Module):
 
     def forward(self, x):
         left = self.left(x)
-        right = self.right(x) #self.right(x)
+        right = self.right(x)
         y = [left.view(left.size(0), -1), right.view(right.size(0), -1)]
         x = torch.cat(y, 1)
         x = F.dropout(x, p=self.dropout)
-        #x = x.view(x.size(0), -1)
+        return x
+
+class DeepFeatureNet(nn.Module):
+    def __init__(self, num_classes: int, input_shape: tuple, dropout: float):
+        super(DeepFeatureNet, self).__init__()
+        self.DeepFeatureNet_ = DeepFeatureNet_(input_shape, dropout)
+        n_size = self._get_conv_output(input_shape)
+        self.fc1 = nn.Linear(n_size, num_classes)
+        #self.fc1 = nn.Linear(2560, num_classes)
+        self.num_classes = num_classes
+        self.weights_init()
+
+    # generate input sample and forward to get shape
+    def _get_conv_output(self, shape):
+        bs = 1
+        input = torch.rand(bs, *shape)
+        output_feat = self.DeepFeatureNet_(input)
+        n_size = output_feat.data.view(bs, -1).size(1)
+        return n_size
+
+    def weights_init(m):
+        for _, mi in m._modules.items():
+            if isinstance(mi, nn.Conv2d) or isinstance(m, nn.Linear):
+                xavier_normal(mi.weight.data)
+                if mi.bias is not None:
+                    xavier_normal(mi.bias.data)
+
+    def forward(self, x):
+        x = self.DeepFeatureNet_(x)
         x = self.fc1(x)
+        return x
+
+
+class DeepSleepNet(nn.Module):
+    def __init__(self, num_classes: int, input_shape: tuple, dropout: float):
+        super(DeepSleepNet, self).__init__()
+        self.DeepFeatureNet_ = DeepFeatureNet_(input_shape, dropout)
+        self.left = nn.LSTM(2560, 512, 2,
+                         batch_first=True, bidirectional=True, dropout=dropout)
+        self.right = nn.Linear(2560, 1024)
+
+        self.fc = nn.Linear(1024, 5, bias=False)
+        self.num_classes = num_classes
+        self.weights_init()
+
+    def weights_init(m):
+        for _, mi in m._modules.items():
+            if isinstance(mi, nn.Conv2d) or isinstance(m, nn.Linear):
+                xavier_normal(mi.weight.data)
+                if mi.bias is not None:
+                    xavier_normal(mi.bias.data)
+
+    def forward(self, x):
+        x = self.DeepFeatureNet_(x)
+        right = self.right(x) # (batch x seqlen, hidden_size*2)
+        # reshape to (batch, seqlen, feature)
+        x = torch.reshape(x, (-1, 25, 2560))
+        left, _ = self.left(x)   # (batch_size, seq_length, hidden_size*2)
+        left = left.reshape((-1, 1024)) # (batch x seqlen, hidden_size*2)
+
+        x = left + right # (batch x seqlen, hidden_size*2)
+        x = F.dropout(x, p=.5)
+        x = self.fc(x)
         return x
