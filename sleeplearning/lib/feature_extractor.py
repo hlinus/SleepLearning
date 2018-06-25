@@ -55,9 +55,23 @@ class ChannelSelector(BaseEstimator, TransformerMixin):
         return x
 
 
+class ConvToInt16(BaseEstimator, TransformerMixin):
+    """
+        Convert input to 16 bit integer values
+    """
+    def __init__(self):
+        pass
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, x):
+        return x.astype(np.int16)
+
+
 class BandPass(BaseEstimator, TransformerMixin):
     """
-        Zero mean and unit variance scaler
+        Band filter 1D signal
     """
     def __init__(self, fs, lowpass, highpass):
         self.lowpass = lowpass
