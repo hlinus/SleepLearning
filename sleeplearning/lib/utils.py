@@ -1,55 +1,18 @@
-import inspect
+import sys
 import os
+root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
+sys.path.insert(0, root_dir)
+import inspect
 import time
-from pprint import pprint
-
 import pandas as pd
 import re
-import sys
 import numpy as np
-import torch
 from scipy.signal import resample
 from torch import optim
 from torch.utils.data import DataLoader
 from typing import List
-import glob
-
 from torch.utils.data.sampler import WeightedRandomSampler, RandomSampler
-
-from sleeplearning.lib.feature_extractor import FeatureExtractor
-from sleeplearning.lib.loaders import baseloader
-from sleeplearning.lib.loaders.physionet_challenge18 import PhysionetChallenge18
-
-root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
-sys.path.insert(0, root_dir)
 from sleeplearning.lib.loaders.baseloader import BaseLoader
-
-
-def load_data(dir: os.path, num_labels: int, feats: dict, neighbors: int,
-              max_subjects: int, loader: BaseLoader,
-              batch_size: int, oversample: bool, cuda: bool,
-              verbose):
-    kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
-    ds = SleepLearningDataset(dir, num_labels,
-                              FeatureExtractor(feats).get_features(), neighbors,
-                              max_subjects, loader, verbose=verbose)
-    ds.dataset_info['oversample'] = oversample
-
-    if oversample:
-        class_count = np.fromiter(ds.dataset_info['class_distribution'].values(), dtype=np.float32)
-        weight = 1. / class_count
-        samples_weight = weight[ds.targets].astype(np.float32)
-        sampler = WeightedRandomSampler(samples_weight, len(samples_weight))
-    else:
-        sampler = RandomSampler(ds)
-
-    if verbose:
-        print('\nclass distribution:', ds.dataset_info['class_distribution'])
-        print('input shape:', ds.dataset_info['input_shape'])
-        print('oversample:', ds.dataset_info['oversample'])
-
-    dataloader = DataLoader(ds, batch_size=batch_size, sampler=sampler, **kwargs)
-    return dataloader, ds.dataset_info
 
 
 def create_dataset(subjects: List[BaseLoader], outdir: str):
@@ -76,8 +39,8 @@ def create_dataset(subjects: List[BaseLoader], outdir: str):
 class SleepLearningDataset(object):
     """Sleep Learning dataset."""
 
-    def __init__(self, foldr: str, num_labels: int, feature_extractor,
-                 neighbors, max_subjects, loader, discard_arts=True,
+    def __init__(self, data_dir: str, subject_csv: str, num_labels: int, feature_extractor,
+                 neighbors, loader, discard_arts=True,
                  transform=None, verbose=False):
         assert(neighbors % 2 == 0)
 
@@ -89,25 +52,22 @@ class SleepLearningDataset(object):
                                3: 1,
                                4: 1, 5: 2}
 
-        config_hash = hash((foldr, num_labels, feature_extractor, neighbors,
+        config_hash = hash((data_dir, num_labels, feature_extractor, neighbors,
                            discard_arts, transform))
-        self.dir = os.path.join(foldr, 'transformed_'+str(config_hash))
+        self.dir = os.path.join(data_dir, 'transformed_'+str(config_hash))
         self.transform = transform
         self.X = []
         self.targets = []
         # processed dataset does not yet exist?
         subject_labels = []
         if not os.path.isdir(self.dir):
-            #os.makedirs(self.dir)
-            labels = np.array([], dtype=int)
-            # TODO: Replace with csv
-            subject_files = sorted(os.listdir(foldr))[:max_subjects]
+            subject_files = pd.read_csv(subject_csv, header=None)[0].tolist()
             class_distribution = np.zeros(
                 len(BaseLoader.sleep_stages_labels.keys()), dtype=int)
             #subject_labels = []
             for subject_file in subject_files:
                 start = time.time()
-                subject = loader(os.path.join(foldr, subject_file))
+                subject = loader(os.path.join(data_dir, subject_file))
                 subject_labels.append(subject.label)
                 psgs_reshaped = {}
                 for k, psgs in subject.psgs.items():
@@ -182,6 +142,28 @@ class SleepLearningDataset(object):
 
     def __len__(self):
         return len(self.X)
+
+
+def get_loader(ds: SleepLearningDataset,
+              batch_size: int, oversample: bool, cuda: bool,
+              verbose):
+    kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
+
+    if oversample:
+        class_count = np.fromiter(ds.dataset_info['class_distribution'].values(), dtype=np.float32)
+        weight = 1. / class_count
+        samples_weight = weight[ds.targets].astype(np.float32)
+        sampler = WeightedRandomSampler(samples_weight, len(samples_weight))
+    else:
+        sampler = RandomSampler(ds)
+
+    if verbose:
+        print('\nclass distribution:', ds.dataset_info['class_distribution'])
+        print('input shape:', ds.dataset_info['input_shape'])
+        print('oversample:', oversample)
+
+    dataloader = DataLoader(ds, batch_size=batch_size, sampler=sampler, **kwargs)
+    return dataloader
 
 
 def get_optimizer(s):
