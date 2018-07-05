@@ -22,14 +22,14 @@ def cfg():
     # default dataset settings
     data_dir = os.path.join('../../../physionet-challenge-train')
 
+
     # feature settings
     nclasses = 5
     neighbors = 0
-    num_val_subjects = 40
 
     # training settings
     ts = {
-        'model': 'DeepFeatureNet',
+        'model': 'MediumAdaptive',
         'batch_size_train': 32,
         'batch_size_val': 250,
         'dropout': .5,
@@ -37,7 +37,9 @@ def cfg():
         'optim': 'adam,lr=0.00005',
         'cuda': torch.cuda.is_available(),
         'weighted_loss': True,
-        'oversample': False
+        'oversample': False,
+        'fold': None, # only specify for CV
+        'log_dir': None
     }
 
     # seed
@@ -45,7 +47,17 @@ def cfg():
 
 
 @ex.named_config
+def sleepedf():
+    loader = 'Sleepedf'
+    feats = {
+        'channels': [
+            ('EEG-Fpz-Cz', []),
+        ]
+    }
+
+@ex.named_config
 def three_channels_noscale():
+    loader = 'Physionet18'
     feats = {
         'channels': [
             ('F3-M2', []),
@@ -56,6 +68,7 @@ def three_channels_noscale():
 
 @ex.named_config
 def three_channels():
+    loader = 'Physionet18'
     feats = {
         'channels': [
             ('F3-M2', ['OneDScaler()']),
@@ -66,6 +79,7 @@ def three_channels():
 
 @ex.named_config
 def three_channels_int16():
+    loader = 'Physionet18'
     feats = {
         'channels': [
             ('F3-M2', ['ConvToInt16()']),
@@ -76,6 +90,7 @@ def three_channels_int16():
 
 @ex.named_config
 def three_channels_filt():
+    loader = 'Physionet18'
     feats = {
         'channels': [
             ('F3-M2', ['BandPass(fs=100, lowpass=45, highpass=.5)', 'ConvToInt16()']),
@@ -86,6 +101,7 @@ def three_channels_filt():
 
 @ex.named_config
 def seven_channels_int16():
+    loader = 'Physionet18'
     feats = {
         'channels': [
             ('F3-M2', ['ConvToInt16()']),
@@ -100,6 +116,7 @@ def seven_channels_int16():
 
 @ex.named_config
 def one_channel():
+    loader = 'Physionet18'
     feats = {
         'channels': [
             ('F3-M2', ['OneDScaler()']),
@@ -108,6 +125,7 @@ def one_channel():
 
 @ex.named_config
 def one_channel_int16():
+    loader = 'Physionet18'
     feats = {
         'channels': [
             ('F3-M2', ['ConvToInt16()'])

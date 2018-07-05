@@ -37,14 +37,14 @@ stage_dict = {
 EPOCH_SEC_SIZE = 30
 
 
-class SleepEDF(BaseLoader):
+class Sleepedf(BaseLoader):
     """
     Loader for https://www.physionet.org/physiobank/database/sleep-edfx/ files.
     """
     def __init__(self, path: str, epoch_length: int = 30):
         super().__init__(path, epoch_length)
         filename_base = os.path.basename(path)
-        psg_file = path
+        psg_file = path + '.edf'
         ann_file = glob.glob(os.path.join(os.path.dirname(path),filename_base.split('-')[0][:-2]+'*Hypnogram.edf'))[0]
         select_ch = 'EEG Fpz-Cz'
 
@@ -52,7 +52,7 @@ class SleepEDF(BaseLoader):
         self.psgs = {}
         self.sampling_rate_ = 100
 
-        raw = read_raw_edf(psg_file, preload=True, stim_channel=None)
+        raw = read_raw_edf(psg_file, preload=True, stim_channel=None, verbose=self.verbose)
         sampling_rate = raw.info['sfreq']
         raw_ch_df = raw.to_data_frame(scaling_time=100.0)[select_ch]
         raw_ch_df = raw_ch_df.to_frame()
@@ -98,38 +98,42 @@ class SleepEDF(BaseLoader):
                 idx = int(onset_sec * sampling_rate) + np.arange(
                     duration_sec * sampling_rate, dtype=np.int)
                 label_idx.append(idx)
-
-                print("Include onset:{}, duration:{}, label:{} ({})".format(
-                    onset_sec, duration_sec, label, ann_str)
-                )
+                if self.verbose:
+                    print("Include onset:{}, duration:{}, label:{} ({})".format(
+                        onset_sec, duration_sec, label, ann_str)
+                    )
             else:
                 idx = int(onset_sec * sampling_rate) + np.arange(
                     duration_sec * sampling_rate, dtype=np.int)
                 remove_idx.append(idx)
-
-                print("Remove onset:{}, duration:{}, label:{} ({})".format(
-                    onset_sec, duration_sec, label, ann_str
-                ))
+                if self.verbose:
+                    print("Remove onset:{}, duration:{}, label:{} ({})".format(
+                        onset_sec, duration_sec, label, ann_str
+                    ))
         labels = np.hstack(labels)
-
-        print("before remove unwanted: {}".format(
-            np.arange(len(raw_ch_df)).shape))
+        if self.verbose:
+            print("before remove unwanted: {}".format(
+                np.arange(len(raw_ch_df)).shape))
         if len(remove_idx) > 0:
             remove_idx = np.hstack(remove_idx)
             select_idx = np.setdiff1d(np.arange(len(raw_ch_df)), remove_idx)
         else:
             select_idx = np.arange(len(raw_ch_df))
-        print("after remove unwanted: {}".format(select_idx.shape))
+        if self.verbose:
+            print("after remove unwanted: {}".format(select_idx.shape))
 
         # Select only the data with labels
-        print("before intersect label: {}".format(select_idx.shape))
+        if self.verbose:
+            print("before intersect label: {}".format(select_idx.shape))
         label_idx = np.hstack(label_idx)
         select_idx = np.intersect1d(select_idx, label_idx)
-        print("after intersect label: {}".format(select_idx.shape))
+        if self.verbose:
+            print("after intersect label: {}".format(select_idx.shape))
 
         # Remove extra index
         if len(label_idx) > len(select_idx):
-            print("before remove extra labels: {}, {}".format(select_idx.shape,
+            if self.verbose:
+                print("before remove extra labels: {}, {}".format(select_idx.shape,
                                                               labels.shape))
             extra_idx = np.setdiff1d(label_idx, select_idx)
             # Trim the tail
@@ -139,7 +143,8 @@ class SleepEDF(BaseLoader):
                     math.ceil(n_trims / (EPOCH_SEC_SIZE * sampling_rate)))
                 select_idx = select_idx[:-n_trims]
                 labels = labels[:-n_label_trims]
-            print("after remove extra labels: {}, {}".format(select_idx.shape,
+            if self.verbose:
+                print("after remove extra labels: {}, {}".format(select_idx.shape,
                                                              labels.shape))
 
         # Remove movement and unknown stages if any
@@ -169,10 +174,12 @@ class SleepEDF(BaseLoader):
         if start_idx < 0: start_idx = 0
         if end_idx >= len(y): end_idx = len(y) - 1
         select_idx = np.arange(start_idx, end_idx + 1)
-        print("Data before selection: {}, {}".format(x.shape, y.shape))
+        if self.verbose:
+            print("Data before selection: {}, {}".format(x.shape, y.shape))
         x = x[select_idx]
         y = y[select_idx]
-        print("Data after selection: {}, {}".format(x.shape, y.shape))
+        if self.verbose:
+            print("Data after selection: {}, {}".format(x.shape, y.shape))
 
         self.psgs[select_ch.replace(" ", "-")] = x.reshape((-1))
         self.hypnogram = y

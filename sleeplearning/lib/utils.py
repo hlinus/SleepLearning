@@ -1,5 +1,6 @@
 import sys
 import os
+import torch
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 import inspect
@@ -13,6 +14,9 @@ from torch.utils.data import DataLoader
 from typing import List
 from torch.utils.data.sampler import WeightedRandomSampler, RandomSampler
 from sleeplearning.lib.loaders.baseloader import BaseLoader
+from sleeplearning.lib.feature_extractor import FeatureExtractor
+from sleeplearning.lib.models import *
+from sleeplearning.lib.loaders import *
 
 
 def create_dataset(subjects: List[BaseLoader], outdir: str):
@@ -39,9 +43,9 @@ def create_dataset(subjects: List[BaseLoader], outdir: str):
 class SleepLearningDataset(object):
     """Sleep Learning dataset."""
 
-    def __init__(self, data_dir: str, subject_csv: str, num_labels: int, feature_extractor,
-                 neighbors, loader, discard_arts=True,
-                 transform=None, verbose=False):
+    def __init__(self, data_dir: str, subject_csv: str, cvfold: int,
+                 num_labels: int, feature_extractor,neighbors, loader,
+                 discard_arts=True, transform=None, verbose=False):
         assert(neighbors % 2 == 0)
 
         if num_labels == 5:
@@ -61,7 +65,7 @@ class SleepLearningDataset(object):
         # processed dataset does not yet exist?
         subject_labels = []
         if not os.path.isdir(self.dir):
-            subject_files = pd.read_csv(subject_csv, header=None)[0].tolist()
+            subject_files = pd.read_csv(subject_csv, header=None)[cvfold].dropna().tolist()
             class_distribution = np.zeros(
                 len(BaseLoader.sleep_stages_labels.keys()), dtype=int)
             #subject_labels = []
@@ -144,9 +148,9 @@ class SleepLearningDataset(object):
         return len(self.X)
 
 
-def get_loader(ds: SleepLearningDataset,
-              batch_size: int, oversample: bool, cuda: bool,
-              verbose):
+def get_sampler(ds: SleepLearningDataset,
+                batch_size: int, oversample: bool, cuda: bool,
+                verbose):
     kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
 
     if oversample:
@@ -164,6 +168,57 @@ def get_loader(ds: SleepLearningDataset,
 
     dataloader = DataLoader(ds, batch_size=batch_size, sampler=sampler, **kwargs)
     return dataloader
+
+
+def get_loader(s):
+    ind = [i for i in range(len(s)) if str.isupper(s[i])]
+    module_name = ''.join(
+        [s[i] + '_' if (i + 1) in ind else str.lower(s[i])
+         for i in range(len(s))])
+    loader = eval(module_name + '.' + s)
+    return loader
+
+def get_network(ts, nclasses, input_shape):
+    ind = [i for i in range(len(ts['model'])) if str.isupper(ts['model'][i])]
+    module_name = ''.join(
+        [ts['model'][i] + '_' if (i + 1) in ind else str.lower(ts['model'][i])
+         for i in range(len(ts['model']))])
+    model = eval(module_name + '.' + ts['model'])(nclasses,
+                                                  input_shape,
+                                                  ts['dropout'])
+    return model
+
+
+def get_model(ts, nclasses, train_ds, cvfold=0):
+
+    model = get_network(ts, nclasses, train_ds.dataset_info['input_shape'])
+
+    optim_fn, optim_params = get_optimizer(ts['optim'])
+
+    optimizer = optim_fn(model.parameters(), **optim_params)
+    # TODO: refactor to get_loss(train_ds, weighted_loss: bool)
+    if ts['weighted_loss']:
+        # TODO: assure weights are in correct order
+        counts = np.fromiter(
+            train_ds.dataset_info['class_distribution'].values(),
+            dtype=float)
+        normed_counts = counts / np.min(counts)
+        weights = np.reciprocal(normed_counts).astype(np.float32)
+    else:
+        weights = np.ones(nclasses)
+    print("\nCLASS WEIGHTS (LOSS): ", weights)
+    weights = torch.from_numpy(weights).type(torch.FloatTensor)
+    criterion = torch.nn.CrossEntropyLoss(weight=weights)
+
+    print('\n', model)
+    print('\n')
+
+    if ts['cuda']:
+        model.cuda()
+        criterion.cuda()
+        weights.cuda()
+
+    return model, criterion, optimizer
 
 
 def get_optimizer(s):

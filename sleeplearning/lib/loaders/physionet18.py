@@ -11,7 +11,7 @@ from sleeplearning.lib.loaders.baseloader import BaseLoader
 EPOCH_TIME = 30
 
 
-class PhysionetChallenge18(BaseLoader):
+class Physionet18(BaseLoader):
     """
     Loader for PhysioNet/CinC Challenge 2018 (https://physionet.org/physiobank/database/challenge/2018/)
     """

@@ -24,7 +24,8 @@ class Base(object):
         self.cudaEfficient = cuda
 
         self.tenacity = 100
-        self.best_acc_ = 0
+        self.best_acc_ = None
+        self.last_acc = None
 
         if self.cudaEfficient:
             self.remap_storage = lambda storage, loc: storage.cuda(0)
@@ -47,16 +48,29 @@ class Base(object):
         # Training
         while not stop_train and self.nepoch <= max_epoch:
             tr_loss, tr_acc, tr_tar, tr_pred = self.trainepoch(train_loader, self.nepoch)
-            val_loss, val_acc, val_tar, val_pred = self.score(val_loader)
+            val_loss, self.last_acc, val_tar, val_pred = self.score(val_loader)
             # log accuracy and confusion matrix
             if self.logger is not None:
                 self.logger.scalar_summary('acc/train', tr_acc, self.nepoch)
                 self.logger.scalar_summary('loss/train', tr_loss,
                                            self.nepoch)
-                self.logger.scalar_summary('acc/val', val_acc, self.nepoch)
+                self.logger.scalar_summary('acc/val', self.last_acc, self.nepoch)
                 self.logger.scalar_summary('loss/val', val_loss, self.nepoch)
-            if val_acc > bestaccuracy:
-                bestaccuracy = val_acc
+                np.savez(
+                    os.path.join(self.logger.log_dir, 'pred_train_last.npz'),
+                    predictions=np.array(tr_pred), targets=np.array(tr_tar))
+                np.savez(
+                    os.path.join(self.logger.log_dir, 'pred_val_last.npz'),
+                    predictions=np.array(val_pred), targets=np.array(val_tar))
+            if self.last_acc > bestaccuracy:
+                shutil.copyfile(
+                    os.path.join(self.logger.log_dir, 'pred_train_last.npz'),
+                    os.path.join(self.logger.log_dir, 'pred_train_best.npz'))
+                shutil.copyfile(
+                    os.path.join(self.logger.log_dir, 'pred_val_last.npz'),
+                    os.path.join(self.logger.log_dir, 'pred_val_best.npz'))
+
+                bestaccuracy = self.last_acc
                 bestmodel = copy.deepcopy(self.model)
                 self.logger.cm_summary(tr_pred, tr_tar, 'cm/train',
                                        self.nepoch,

@@ -37,7 +37,7 @@ class BaseLoader(ABC):
         self.epoch_length = epoch_length  #epoch_size
         self.window = None  #self.sampling_rate_ * 2
         self.stride =  None  #self.sampling_rate_
-
+        self.verbose = verbose
 
     def get_spectrograms(self, channel: str, window: int, stride: int) -> Tuple[
         np.ndarray, np.ndarray, np.ndarray]:

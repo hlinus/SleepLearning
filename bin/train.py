@@ -6,76 +6,55 @@ from cfg.config import *
 import torch
 import numpy as np
 from sacred.stflow import LogFileWriter
-from sleeplearning.lib.models import *
 from sleeplearning.lib.feature_extractor import FeatureExtractor
 from sleeplearning.lib.base import Base
 from sleeplearning.lib.logger import Logger
 import sleeplearning.lib.utils as utils
-from sleeplearning.lib.loaders.physionet_challenge18 import PhysionetChallenge18
-
-
-def test(clf, loader, test_dir, subject_csv):
-    for _, row in pd.read_csv('test_subjects.csv').iterrows():
-        subject = row[0]
-        #utils.load_data()
-    pass
+import json
 
 @ex.main
-def train(data_dir, train_csv, val_csv, ts, feats, nclasses, neighbors,
-         seed, _run):
-    log_dir = os.path.join(root_dir, 'logs', str(_run._id), _run.experiment_info['name'])
+def train(data_dir, loader, train_csv, val_csv, ts, feats, nclasses, neighbors,
+          seed, _run):
+    # fix seed
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    if ts['fold'] is None:
+        # TODO: do not overwrite
+        ts['fold'] = 0 # pick first and only column in csv files
+        log_dir = os.path.join(root_dir, 'logs', str(_run._id),
+                           _run.experiment_info['name'])
+    else:
+        log_dir = os.path.join(ts['log_dir'],
+                               'fold' + str(ts['fold']))
+
     print("log_dir: ", log_dir)
     print("seed: ", seed)
     with LogFileWriter(ex):
         logger = Logger(log_dir, _run)
 
-    # fix seed
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
+    with open(os.path.abspath(os.path.join(log_dir, os.pardir, 'config.json')), 'w') as outfile:
+        json.dump(_run.config, outfile)
+
+    loader = utils.get_loader(loader)
 
     print("\nTRAINING SET: ")
-    train_ds = utils.SleepLearningDataset(data_dir, train_csv, nclasses,
-                                    FeatureExtractor(feats).get_features(), neighbors,
-                                    PhysionetChallenge18, verbose=True)
-    train_loader = utils.get_loader(train_ds, ts['batch_size_train'], ts['oversample'],
-                                  ts['cuda'],
-                                  verbose=True)
+    train_ds = utils.SleepLearningDataset(data_dir, train_csv, ts['fold'], nclasses,
+                                    FeatureExtractor(
+                                        feats).get_features(), neighbors,
+                                    loader, verbose=True)
+    train_loader = utils.get_sampler(train_ds, ts['batch_size_train'],
+                               ts['oversample'], ts['cuda'], verbose=True)
     print("\nVAL SET: ")
-    val_ds = utils.SleepLearningDataset(data_dir, val_csv, nclasses,
-                                          FeatureExtractor(
-                                              feats).get_features(), neighbors,
-                                          PhysionetChallenge18, verbose=True)
-    val_loader = utils.get_loader(val_ds, ts['batch_size_val'], False, ts['cuda'],
-                                    verbose=True)
+    val_ds = utils.SleepLearningDataset(data_dir, val_csv, ts['fold'], nclasses,
+                                  FeatureExtractor(feats).get_features(),
+                                  neighbors, loader,
+                                  verbose=True)
+    val_loader = utils.get_sampler(val_ds, ts['batch_size_val'], False,
+                             ts['cuda'], verbose=True)
 
-    # TODO: refactor to utils.get_model(model: str)
-    ind = [i for i in range(len(ts['model'])) if str.isupper(ts['model'][i])]
-    module_name = ''.join([ts['model'][i]+'_' if (i+1) in ind else str.lower(ts['model'][i]) for i in range(len(ts['model']))])
-    model = eval(module_name+'.'+ts['model'])(nclasses, train_ds.dataset_info['input_shape'], ts['dropout'])
-    optim_fn, optim_params = utils.get_optimizer(ts['optim'])
+    model, criterion, optimizer = utils.get_model(ts, nclasses, train_ds)
 
-    optimizer = optim_fn(model.parameters(), **optim_params)
-    # TODO: refactor to utils.get_loss(train_ds, weighted_loss: bool)
-    if ts['weighted_loss']:
-        # TODO: assure weights are in correct order
-        counts = np.fromiter(train_ds.dataset_info['class_distribution'].values(),
-                             dtype=float)
-        normed_counts = counts / np.min(counts)
-        weights = np.reciprocal(normed_counts).astype(np.float32)
-    else:
-        weights = np.ones(nclasses)
-    print("\nCLASS WEIGHTS (LOSS): ", weights)
-    weights = torch.from_numpy(weights).type(torch.FloatTensor)
-    criterion = torch.nn.CrossEntropyLoss(weight=weights)
-
-    print('\n', model)
-    print('\n')
-
-    if ts['cuda']:
-        model.cuda()
-        criterion.cuda()
-        weights.cuda()
 
     # Fit the model
     clf = Base(model, optimizer, criterion, logger, ts['cuda'])
@@ -83,10 +62,10 @@ def train(data_dir, train_csv, val_csv, ts, feats, nclasses, neighbors,
 
     return clf.best_acc_
 
+
 if __name__ == '__main__':
     args = sys.argv
     options = '_'.join(
-        [x for x in args[2:] if 'data_dir' not in x and 'train_csv' not in x
-         and 'val_csv' not in x])
+        [x for x in args[2:min(len(args), 6)]])
     args += ['--name', options]
     ex.run_commandline(argv=args)
