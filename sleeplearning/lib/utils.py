@@ -19,27 +19,6 @@ from sleeplearning.lib.models import *
 from sleeplearning.lib.loaders import *
 
 
-def create_dataset(subjects: List[BaseLoader], outdir: str):
-    #subject_labels = []
-    outdir += '/'
-    if not os.path.exists(outdir):
-        os.makedirs(outdir)
-    for subject in subjects:
-        #subject_labels.append(subject.label)
-        psgs_reshaped = {}
-        # pad all channels with zeros
-        for k, psgs in subject.psgs.items():
-            psgs1 = psgs.reshape(
-                (-1, subject.sampling_rate_ * subject.epoch_length))
-            if subject.sampling_rate_ > 100:
-                # downsample to 100 Hz
-                psgs1 = resample(psgs1, subject.epoch_length * 100,
-                                 axis=1)
-            psgs_reshaped[k] = psgs1
-        np.savez(outdir + subject.label, subject_label=subject.label,
-                 psgs=psgs_reshaped, labels=subject.hypnogram)
-
-
 class SleepLearningDataset(object):
     """Sleep Learning dataset."""
 
