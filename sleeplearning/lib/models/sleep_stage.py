@@ -4,9 +4,13 @@ import torch.nn.functional as F
 
 
 class SleepStage(nn.Module):
-    def __init__(self, num_classes: int, input_shape: tuple):
+    def __init__(self, ts: dict):
+        input_shape = ts['input_dim']
+        dropout = ts['dropout']
+        num_classes = ts['nclasses']
         super(SleepStage, self).__init__()
         kernel_size = 3
+        self.dropout = dropout
         padding = (kernel_size // 2, kernel_size // 2)
         self.conv1 = nn.Conv2d(input_shape[0], 32, kernel_size=kernel_size,
                                padding=padding)

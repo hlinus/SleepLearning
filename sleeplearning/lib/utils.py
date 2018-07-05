@@ -157,26 +157,24 @@ def get_loader(s):
     loader = eval(module_name + '.' + s)
     return loader
 
-def get_network(ts, nclasses, input_shape):
+def get_network(ts):
     ind = [i for i in range(len(ts['model'])) if str.isupper(ts['model'][i])]
     module_name = ''.join(
         [ts['model'][i] + '_' if (i + 1) in ind else str.lower(ts['model'][i])
          for i in range(len(ts['model']))])
-    model = eval(module_name + '.' + ts['model'])(nclasses,
-                                                  input_shape,
-                                                  ts['dropout'])
+    model = eval(module_name + '.' + ts['model'])(ts)
     return model
 
 
-def get_model(ts, nclasses, train_ds, cvfold=0):
-
-    model = get_network(ts, nclasses, train_ds.dataset_info['input_shape'])
+def get_model(ts, weighted_loss, train_ds, cuda):
+    ts['input_dim'] = train_ds.dataset_info['input_shape']
+    model = get_network(ts)
 
     optim_fn, optim_params = get_optimizer(ts['optim'])
 
     optimizer = optim_fn(model.parameters(), **optim_params)
     # TODO: refactor to get_loss(train_ds, weighted_loss: bool)
-    if ts['weighted_loss']:
+    if weighted_loss:
         # TODO: assure weights are in correct order
         counts = np.fromiter(
             train_ds.dataset_info['class_distribution'].values(),
@@ -184,7 +182,7 @@ def get_model(ts, nclasses, train_ds, cvfold=0):
         normed_counts = counts / np.min(counts)
         weights = np.reciprocal(normed_counts).astype(np.float32)
     else:
-        weights = np.ones(nclasses)
+        weights = np.ones(ts['nclasses'])
     print("\nCLASS WEIGHTS (LOSS): ", weights)
     weights = torch.from_numpy(weights).type(torch.FloatTensor)
     criterion = torch.nn.CrossEntropyLoss(weight=weights)
@@ -192,7 +190,7 @@ def get_model(ts, nclasses, train_ds, cvfold=0):
     print('\n', model)
     print('\n')
 
-    if ts['cuda']:
+    if cuda:
         model.cuda()
         criterion.cuda()
         weights.cuda()

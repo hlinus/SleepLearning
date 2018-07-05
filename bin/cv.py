@@ -38,8 +38,8 @@ def evaluate(files):
     return mean_acc
 
 @ex.main
-def cv(data_dir, loader, train_csv, val_csv, ts, feats, nclasses, neighbors,
-          seed, _run):
+def cv(data_dir, loader, train_csv, val_csv, ts, channels, nbrs, cuda, fold,
+          oversample, weighted_loss, batch_size_train, batch_size_val, seed, _run):
     print("\n\n TRAIN: \n\n")
     train_files = glob.glob(os.path.join(ts['log_dir'], '**', '*train*last.npz'),
                           recursive=True)

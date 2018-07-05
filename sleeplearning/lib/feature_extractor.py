@@ -11,7 +11,7 @@ class FeatureExtractor(object):
         outdim = None
         f = None
 
-        for i, (channel, channel_opts) in enumerate(features['channels']):
+        for i, (channel, channel_opts) in enumerate(features):
             transformers = [('selector', ChannelSelector(channel))]
             for j, t in enumerate(channel_opts):
                 extractor = eval(t)
