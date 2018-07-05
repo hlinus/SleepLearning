@@ -39,13 +39,14 @@ def evaluate(files):
 
 @ex.main
 def cv(data_dir, loader, train_csv, val_csv, ts, channels, nbrs, cuda, fold,
-          oversample, weighted_loss, batch_size_train, batch_size_val, seed, _run):
+          oversample, weighted_loss, batch_size_train, batch_size_val, log_dir,
+          seed, _run):
     print("\n\n TRAIN: \n\n")
-    train_files = glob.glob(os.path.join(ts['log_dir'], '**', '*train*last.npz'),
+    train_files = glob.glob(os.path.join(log_dir, '**', '*train*last.npz'),
                           recursive=True)
     evaluate(train_files)
     print("\n\n VALIDATION: \n\n")
-    val_files = glob.glob(os.path.join(ts['log_dir'], '**', '*val*last.npz'), recursive=True)
+    val_files = glob.glob(os.path.join(log_dir, '**', '*val*last.npz'), recursive=True)
     mean_val_acc = evaluate(val_files)
 
     return mean_val_acc
