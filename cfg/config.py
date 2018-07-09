@@ -1,12 +1,15 @@
 import os
 import torch
 import sys
-from sacred import Experiment, Ingredient
+#from sacred import Ingredient
+from sacred import Experiment
 from sacred.observers import MongoObserver
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 
-ex = Experiment(base_dir=os.path.join(root_dir, 'sleeplearning', 'lib'))
+basedir = os.path.join(root_dir, 'sleeplearning', 'lib')
+#ex = Experiment(base_dir=basedir, ingredients=[general])
+ex = Experiment(base_dir=basedir)
 MONGO_OBSERVER = MongoObserver.create(url='mongodb://toor:y0qXDe3qumoawG0rPfnS'
                                           '@cab-e81-31/admin?authMechanism'
                                           '=SCRAM-SHA-1', db_name='sacred')
@@ -50,9 +53,10 @@ def cfg():
 def multvarnet():
     ts = {
          'model': 'MultivariateNet',
+         'epochs': 200,
          'dropout': .5,
-         'epochs': 100,
          'optim': 'adam,lr=0.00005',
+         'fc_d' : [[4096,.5],[100,0]]
     }
 
 

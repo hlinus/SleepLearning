@@ -23,7 +23,7 @@ class Base(object):
         self.logger = logger
         self.cudaEfficient = cuda
 
-        self.tenacity = 100
+        self.tenacity = 10000
         self.best_acc_ = None
         self.last_acc = None
 
@@ -62,7 +62,7 @@ class Base(object):
                 np.savez(
                     os.path.join(self.logger.log_dir, 'pred_val_last.npz'),
                     predictions=np.array(val_pred), targets=np.array(val_tar))
-            if self.last_acc > bestaccuracy:
+            if self.last_acc > bestaccuracy and self.logger is not None:
                 shutil.copyfile(
                     os.path.join(self.logger.log_dir, 'pred_train_last.npz'),
                     os.path.join(self.logger.log_dir, 'pred_train_best.npz'))
