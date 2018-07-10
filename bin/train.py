@@ -15,21 +15,19 @@ import json
 
 
 @ex.main
-def train(data_dir, loader, train_csv, val_csv, ts, channels, nbrs, cuda, fold,
-          oversample, weighted_loss, batch_size_train, batch_size_val, log_dir,
-          seed, _run):
+def train(ds, arch, ms, cuda, log_dir, seed, _run):
     # fix seed
     print("seed: ", seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
-    if fold is None:
-        fold = 0  # pick first and only column in csv files
+    if ds['fold'] is None:
+        ds['fold'] = 0  # pick first and only column in csv files
         log_dir = os.path.join(log_dir, str(_run._id),
                            _run.experiment_info['name'])
     else:
-        log_dir = os.path.join(log_dir, 'fold' + str(fold))
+        log_dir = os.path.join(log_dir, 'fold' + str(ds['fold']))
 
     if _run._id is not None:
         with LogFileWriter(ex):
@@ -42,31 +40,9 @@ def train(data_dir, loader, train_csv, val_csv, ts, channels, nbrs, cuda, fold,
         log_dir = None
         logger = None
 
-    loader = utils.get_loader(loader)
-
-    print("\nTRAINING SET: ")
-    train_ds = utils.SleepLearningDataset(data_dir, train_csv, fold,
-                                          ts['nclasses'],
-                                          FeatureExtractor(
-                                              channels).get_features(), nbrs,
-                                          loader, verbose=True)
-    train_loader = utils.get_sampler(train_ds, batch_size_train,
-                               oversample, cuda, verbose=True)
-    print("\nVAL SET: ")
-    val_ds = utils.SleepLearningDataset(data_dir, val_csv, fold, ts['nclasses'],
-                                        FeatureExtractor(
-                                            channels).get_features(), nbrs,
-                                        loader, verbose=True)
-    val_loader = utils.get_sampler(val_ds, batch_size_val, False,
-                             cuda, verbose=True)
-
-    model, criterion, optimizer = utils.get_model(ts, weighted_loss, train_ds,
-                                                  cuda)
-
-
     # Fit the model
-    clf = Base(model, optimizer, criterion, logger, cuda)
-    clf.fit(train_loader, val_loader, max_epoch=ts['epochs'])
+    clf = Base(logger, cuda)
+    clf.fit(arch, ms, **ds)
 
     return clf.best_acc_
 
@@ -74,6 +50,7 @@ def train(data_dir, loader, train_csv, val_csv, ts, channels, nbrs, cuda, fold,
 if __name__ == '__main__':
     args = sys.argv
     options = '_'.join(
-        [x for x in args[2:min(len(args), 6)]])
+        [x for x in args[2:] if 'data_dir' not in x and 'train_csv' not in x
+         and 'val_csv' not in x])
     args += ['--name', options]
     ex.run_commandline(argv=args)

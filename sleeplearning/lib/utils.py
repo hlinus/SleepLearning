@@ -141,7 +141,7 @@ def get_sampler(ds: SleepLearningDataset,
         sampler = RandomSampler(ds)
 
     if verbose:
-        print('\nclass distribution:', ds.dataset_info['class_distribution'])
+        print('class distribution:', ds.dataset_info['class_distribution'])
         print('input shape:', ds.dataset_info['input_shape'])
         print('oversample:', oversample)
 
@@ -157,45 +157,44 @@ def get_loader(s):
     loader = eval(module_name + '.' + s)
     return loader
 
-def get_network(ts):
-    ind = [i for i in range(len(ts['model'])) if str.isupper(ts['model'][i])]
+
+def get_model_arch(arch, ms):
+    ind = [i for i in range(len(arch)) if str.isupper(arch[i])]
     module_name = ''.join(
-        [ts['model'][i] + '_' if (i + 1) in ind else str.lower(ts['model'][i])
-         for i in range(len(ts['model']))])
-    model = eval(module_name + '.' + ts['model'])(ts)
-    return model
+        [arch[i] + '_' if (i + 1) in ind else str.lower(arch[i])
+         for i in range(len(arch))])
+    arch = eval(module_name + '.' + arch)(ms)
+    return arch
 
 
-def get_model(ts, weighted_loss, train_ds, cuda):
-    ts['input_dim'] = train_ds.dataset_info['input_shape']
-    model = get_network(ts)
+def get_model(arch, ms, class_dist = None, cuda = True):
 
-    optim_fn, optim_params = get_optimizer(ts['optim'])
+    optim_fn, optim_params = get_optimizer(ms['optim'])
 
-    optimizer = optim_fn(model.parameters(), **optim_params)
+    optimizer = optim_fn(arch.parameters(), **optim_params)
     # TODO: refactor to get_loss(train_ds, weighted_loss: bool)
-    if weighted_loss:
+    if ms['weighted_loss']:
         # TODO: assure weights are in correct order
-        counts = np.fromiter(
-            train_ds.dataset_info['class_distribution'].values(),
+        counts = np.array(class_dist,
             dtype=float)
         normed_counts = counts / np.min(counts)
         weights = np.reciprocal(normed_counts).astype(np.float32)
     else:
-        weights = np.ones(ts['nclasses'])
-    print("\nCLASS WEIGHTS (LOSS): ", weights)
+        weights = np.ones(ms['nclasses'])
+    print("\nCLASS WEIGHTS (LOSS): \n", weights)
     weights = torch.from_numpy(weights).type(torch.FloatTensor)
     criterion = torch.nn.CrossEntropyLoss(weight=weights)
 
-    print('\n', model)
+    print('MODEL PARAMS:\n', ms)
+    print('ARCH: \n', arch)
     print('\n')
 
     if cuda:
-        model.cuda()
+        ms.cuda()
         criterion.cuda()
         weights.cuda()
 
-    return model, criterion, optimizer
+    return criterion, optimizer
 
 
 def get_optimizer(s):

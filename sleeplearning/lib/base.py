@@ -13,14 +13,19 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from typing import List, Tuple
 from sleeplearning.lib.utils import AverageMeter
+import sleeplearning.lib.utils as utils
 
 
 class Base(object):
-    def __init__(self, model, optimizer, criterion, logger, cuda):
-        self.model = model
-        self.optimizer = optimizer
-        self.criterion = criterion
+    def __init__(self, logger, cuda):
+        self.model = None
+        self.optimizer = None
+        self.criterion = None
+        self.arch = None
+        self.ms = None
+        self.ds = None
         self.logger = logger
+        self.nepoch = -1
         self.cudaEfficient = cuda
 
         self.tenacity = 10000
@@ -30,23 +35,62 @@ class Base(object):
         if self.cudaEfficient:
             self.remap_storage = lambda storage, loc: storage.cuda(0)
             self.kwargs = {'num_workers': 1, 'pin_memory': True}
-            self.model.cuda()
-            self.criterion.cuda()
         else:
             # remap storage to CPU (needed for model load if no GPU avail.)
             self.remap_storage = lambda storage, loc: storage
             self.kwargs = {}
 
-    def fit(self, train_loader, val_loader, max_epoch = 10,
-            early_stop=True):
+    def fit(self, arch, ms, data_dir, loader, train_csv, val_csv, channels,
+            nclasses, fold,
+            nbrs, batch_size_train, batch_size_val, oversample):
+
         self.nepoch = 1
+
+        loader = utils.get_loader(loader)
+
+        print("\nTRAINING SET: ")
+        train_ds = utils.SleepLearningDataset(data_dir, train_csv, fold,
+                                              nclasses,
+                                              FeatureExtractor(
+                                                  channels).get_features(),
+                                              nbrs,
+                                              loader, verbose=True)
+        ms['input_dim'] = train_ds.dataset_info['input_shape']
+        ms['nclasses'] = nclasses
+
+        self.arch = arch
+        self.ms = ms
+        self.ds = {'channels': channels, 'nbrs': nbrs, 'nclasses': nclasses,
+                   'train_dist': list(train_ds.dataset_info[
+                                          'class_distribution'].values())}
+
+        print("\nVAL SET: ")
+        val_ds = utils.SleepLearningDataset(data_dir, val_csv, fold,
+                                            ms['nclasses'],
+                                            FeatureExtractor(
+                                                channels).get_features(),
+                                            nbrs,
+                                            loader, verbose=True)
+        self.model = utils.get_model_arch(arch, ms)
+        self.criterion, self.optimizer = utils.get_model(self.model, ms,
+                                                                     self.ds[
+                                                                         'train_dist'], self.cudaEfficient)
+        print("TRAIN LOADER:")
+        train_loader = utils.get_sampler(train_ds, batch_size_train,
+                                         oversample, self.cudaEfficient,
+                                         verbose=True)
+        print("\nVAL LOADER:")
+        val_loader = utils.get_sampler(val_ds, batch_size_val,
+                                       False,
+                                       self.cudaEfficient, verbose=True)
+        print("\n\n")
         bestmodel = copy.deepcopy(self.model)
         bestaccuracy = -1
         stop_train = False
         early_stop_count = 0
 
         # Training
-        while not stop_train and self.nepoch <= max_epoch:
+        while not stop_train and self.nepoch <= ms['epochs']:
             tr_loss, tr_acc, tr_tar, tr_pred = self.trainepoch(train_loader, self.nepoch)
             val_loss, self.last_acc, val_tar, val_pred = self.score(val_loader)
             # log accuracy and confusion matrix
@@ -62,28 +106,39 @@ class Base(object):
                 np.savez(
                     os.path.join(self.logger.log_dir, 'pred_val_last.npz'),
                     predictions=np.array(val_pred), targets=np.array(val_tar))
-            if self.last_acc > bestaccuracy and self.logger is not None:
-                shutil.copyfile(
-                    os.path.join(self.logger.log_dir, 'pred_train_last.npz'),
-                    os.path.join(self.logger.log_dir, 'pred_train_best.npz'))
-                shutil.copyfile(
-                    os.path.join(self.logger.log_dir, 'pred_val_last.npz'),
-                    os.path.join(self.logger.log_dir, 'pred_val_best.npz'))
 
-                bestaccuracy = self.last_acc
-                bestmodel = copy.deepcopy(self.model)
-                self.logger.cm_summary(tr_pred, tr_tar, 'cm/train',
-                                       self.nepoch,
-                                       ['W', 'N1', 'N2', 'N3', 'REM'])
-                self.logger.cm_summary(val_pred, val_tar, 'cm/val',
-                                       self.nepoch,
-                                       ['W', 'N1', 'N2', 'N3', 'REM'])
-            elif early_stop:
-                if early_stop_count >= self.tenacity:
-                    stop_train = True
-                early_stop_count += 1
+                if self.last_acc > bestaccuracy or self.nepoch == ms['epochs']:
 
+                    self.save_checkpoint_({
+                        'epoch': self.nepoch,
+                        'arch': self.arch,
+                        'ms': self.ms,
+                        'ds': self.ds,
+                        'state_dict': self.model.state_dict(),
+                        'best_prec1': max(bestaccuracy, self.last_acc),
+                        'optimizer': self.optimizer.state_dict(),
+                    }, self.last_acc > bestaccuracy,
+                                          self.logger.log_dir)
+
+                if self.last_acc > bestaccuracy:
+                    shutil.copyfile(
+                        os.path.join(self.logger.log_dir, 'pred_train_last.npz'),
+                        os.path.join(self.logger.log_dir, 'pred_train_best.npz'))
+                    shutil.copyfile(
+                        os.path.join(self.logger.log_dir, 'pred_val_last.npz'),
+                        os.path.join(self.logger.log_dir, 'pred_val_best.npz'))
+
+                    bestmodel = copy.deepcopy(self.model)
+                    self.logger.cm_summary(tr_pred, tr_tar, 'cm/train',
+                                           self.nepoch,
+                                           ['W', 'N1', 'N2', 'N3', 'REM'])
+                    self.logger.cm_summary(val_pred, val_tar, 'cm/val',
+                                           self.nepoch,
+                                           ['W', 'N1', 'N2', 'N3', 'REM'])
+
+            bestaccuracy = max(bestaccuracy, self.last_acc)
             self.nepoch += 1
+
         self.model = bestmodel
         self.best_acc_ = bestaccuracy
 
@@ -150,8 +205,7 @@ class Base(object):
         for batch_idx, (data, target) in enumerate(val_loader):
             if self.cudaEfficient:
                 data, target = data.cuda(), target.cuda()
-            data, target = Variable(data).float(), Variable(
-                target).long()
+            data, target = Variable(data).float(), Variable(target).long()
 
             # compute output
             output = self.model(data)
@@ -210,8 +264,18 @@ class Base(object):
     def restore(self, checkpoint_dir):
         checkpoint = torch.load(checkpoint_dir,
                                 map_location=self.remap_storage)
+
+        self.ds = checkpoint['ds']
+        self.ms = checkpoint['ms']
+        self.arch = checkpoint['arch']
+        self.model = utils.get_model_arch(self.arch, self.ms)
+        self.criterion, self.optimizer = utils.get_model(self.model, self.ms,
+                                                         self.ds['train_dist'],
+                                                         self.cudaEfficient)
+
         self.model.load_state_dict(checkpoint['state_dict'])
-        self.feats = checkpoint['feats']
+        self.optimizer.load_state_dict(checkpoint['optimizer'])
+
         print("=> loaded model (epoch {}), Prec@1: {}"
               .format(checkpoint['epoch'],
                       checkpoint['best_prec1']))
@@ -235,9 +299,14 @@ class Base(object):
                 (correct_k.mul_(100.0 / batch_size)).data.cpu().numpy().item())
         return topk_acc, pred[0]
 
-    @staticmethod
-    def save_checkpoint_(state, is_best, dir):
+
+    def save_checkpoint_(self, state, is_best, dir):
         filename = os.path.join(dir, 'checkpoint.pth.tar')
         torch.save(state, filename)
+        if self.logger is not None:
+            self.logger._run.add_artifact(filename)
         if is_best:
-            shutil.copyfile(filename, os.path.join(dir, 'model_best.pth.tar'))
+            best_name = os.path.join(dir, 'model_best.pth.tar')
+            shutil.copyfile(filename, best_name)
+            if self.logger is not None:
+                self.logger._run.add_artifact(best_name)
