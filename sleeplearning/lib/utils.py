@@ -167,8 +167,7 @@ def get_model_arch(arch, ms):
     return arch
 
 
-def get_model(arch, ms, class_dist = None, cuda = True):
-
+def get_model(arch, ms, class_dist=None, cuda=True, verbose=False):
     optim_fn, optim_params = get_optimizer(ms['optim'])
 
     optimizer = optim_fn(arch.parameters(), **optim_params)
@@ -181,13 +180,14 @@ def get_model(arch, ms, class_dist = None, cuda = True):
         weights = np.reciprocal(normed_counts).astype(np.float32)
     else:
         weights = np.ones(ms['nclasses'])
-    print("\nCLASS WEIGHTS (LOSS): \n", weights)
+
     weights = torch.from_numpy(weights).type(torch.FloatTensor)
     criterion = torch.nn.CrossEntropyLoss(weight=weights)
-
-    print('MODEL PARAMS:\n', ms)
-    print('ARCH: \n', arch)
-    print('\n')
+    if verbose:
+        print("\nCLASS WEIGHTS (LOSS): \n", weights)
+        print('MODEL PARAMS:\n', ms)
+        print('ARCH: \n', arch)
+        print('\n')
 
     if cuda:
         ms.cuda()

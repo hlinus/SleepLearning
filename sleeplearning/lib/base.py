@@ -17,7 +17,7 @@ import sleeplearning.lib.utils as utils
 
 
 class Base(object):
-    def __init__(self, logger, cuda):
+    def __init__(self, logger=None, cuda=None, verbose=False):
         self.model = None
         self.optimizer = None
         self.criterion = None
@@ -27,7 +27,7 @@ class Base(object):
         self.logger = logger
         self.nepoch = -1
         self.cudaEfficient = cuda
-
+        self.verbose = verbose
         self.tenacity = 10000
         self.best_acc_ = None
         self.last_acc = None
@@ -44,9 +44,7 @@ class Base(object):
             nclasses, fold,
             nbrs, batch_size_train, batch_size_val, oversample):
 
-        self.nepoch = 1
-
-        loader = utils.get_loader(loader)
+        ldr = utils.get_loader(loader)
 
         print("\nTRAINING SET: ")
         train_ds = utils.SleepLearningDataset(data_dir, train_csv, fold,
@@ -54,27 +52,16 @@ class Base(object):
                                               FeatureExtractor(
                                                   channels).get_features(),
                                               nbrs,
-                                              loader, verbose=True)
-        ms['input_dim'] = train_ds.dataset_info['input_shape']
-        ms['nclasses'] = nclasses
-
-        self.arch = arch
-        self.ms = ms
-        self.ds = {'channels': channels, 'nbrs': nbrs, 'nclasses': nclasses,
-                   'train_dist': list(train_ds.dataset_info[
-                                          'class_distribution'].values())}
+                                              ldr, verbose=self.verbose)
 
         print("\nVAL SET: ")
         val_ds = utils.SleepLearningDataset(data_dir, val_csv, fold,
-                                            ms['nclasses'],
+                                            nclasses,
                                             FeatureExtractor(
                                                 channels).get_features(),
                                             nbrs,
-                                            loader, verbose=True)
-        self.model = utils.get_model_arch(arch, ms)
-        self.criterion, self.optimizer = utils.get_model(self.model, ms,
-                                                                     self.ds[
-                                                                         'train_dist'], self.cudaEfficient)
+                                            ldr, verbose=self.verbose)
+
         print("TRAIN LOADER:")
         train_loader = utils.get_sampler(train_ds, batch_size_train,
                                          oversample, self.cudaEfficient,
@@ -84,12 +71,31 @@ class Base(object):
                                        False,
                                        self.cudaEfficient, verbose=True)
         print("\n\n")
+
+        # save parameters for model reloading
+        ms['input_dim'] = train_ds.dataset_info['input_shape']
+        ms['nclasses'] = nclasses
+        self.arch = arch
+        self.ms = ms
+        self.ds = {
+            'loader': loader,
+            'channels': channels,
+            'nbrs': nbrs,
+            'nclasses': nclasses,
+            'train_dist': list(train_ds.dataset_info['class_distribution']
+                               .values())
+        }
+        self.model = utils.get_model_arch(arch, ms)
+        self.criterion, self.optimizer = utils.get_model(self.model, ms,
+                                                         self.ds['train_dist'],
+                                                         self.cudaEfficient)
+
+
+        # Training loop
+        self.nepoch = 1
         bestmodel = copy.deepcopy(self.model)
         bestaccuracy = -1
         stop_train = False
-        early_stop_count = 0
-
-        # Training
         while not stop_train and self.nepoch <= ms['epochs']:
             tr_loss, tr_acc, tr_tar, tr_pred = self.trainepoch(train_loader, self.nepoch)
             val_loss, self.last_acc, val_tar, val_pred = self.score(val_loader)
@@ -191,7 +197,8 @@ class Base(object):
 
         return losses.avg, top1.avg, targets, predictions
 
-    def score(self, val_loader: DataLoader) -> Tuple[float, float, np.array, np.array]:
+    def score(self, val_loader: DataLoader) -> Tuple[float, float, np.array,
+                                                     np.array]:
         batch_time = AverageMeter()
         losses = AverageMeter()
         top1 = AverageMeter()
@@ -234,7 +241,25 @@ class Base(object):
 
         return losses.avg, top1.avg, targets, predictions
 
-    def predict(self, test_loader):
+    def predict(self, subject_path):
+        import tempfile
+        subject_path = os.path.normpath(os.path.abspath(subject_path))
+        data_dir, subject_name = os.path.split(subject_path)
+        temp_path = tempfile.mkdtemp()
+        val_csv = os.path.join(temp_path, 'tmp_csv')
+        np.savetxt(val_csv, np.array([subject_name]), delimiter=",", fmt='%s')
+
+        ldr = utils.get_loader(self.ds['loader'])
+        test_ds = utils.SleepLearningDataset(data_dir, val_csv, 0,
+                                            self.ms['nclasses'],
+                                            FeatureExtractor(
+                                                self.ds['channels'])
+                                                .get_features(),
+                                            self.ds['nbrs'], ldr,
+                                             verbose=self.verbose)
+
+        test_loader = utils.get_sampler(test_ds, 100, False,
+                                        self.cudaEfficient, verbose=True)
         self.model.eval()
         prediction = np.array([])
         for data, target in test_loader:
@@ -268,6 +293,8 @@ class Base(object):
         self.ds = checkpoint['ds']
         self.ms = checkpoint['ms']
         self.arch = checkpoint['arch']
+        self.nepoch = checkpoint['epoch']
+        self.best_acc_ = checkpoint['best_prec1']
         self.model = utils.get_model_arch(self.arch, self.ms)
         self.criterion, self.optimizer = utils.get_model(self.model, self.ms,
                                                          self.ds['train_dist'],
@@ -275,10 +302,9 @@ class Base(object):
 
         self.model.load_state_dict(checkpoint['state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer'])
-
-        print("=> loaded model (epoch {}), Prec@1: {}"
-              .format(checkpoint['epoch'],
-                      checkpoint['best_prec1']))
+        if self.verbose:
+            print("=> loaded model (epoch {}), Prec@1: {}"
+                  .format(self.nepoch, self.best_acc_))
 
     @staticmethod
     def accuracy_(output, target, topk=(1,)) -> Tuple[
