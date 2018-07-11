@@ -189,11 +189,6 @@ def get_model(arch, ms, class_dist=None, cuda=True, verbose=False):
         print('ARCH: \n', arch)
         print('\n')
 
-    if cuda:
-        ms.cuda()
-        criterion.cuda()
-        weights.cuda()
-
     return criterion, optimizer
 
 
