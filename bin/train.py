@@ -41,7 +41,7 @@ def train(ds, arch, ms, cuda, log_dir, seed, _run):
         logger = None
 
     # Fit the model
-    clf = Base(logger, cuda)
+    clf = Base(logger=logger, cuda=cuda, verbose=True)
     clf.fit(arch, ms, **ds)
 
     return clf.best_acc_
