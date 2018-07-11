@@ -1,8 +1,5 @@
 import os
 import sys
-root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
-sys.path.insert(0, root_dir)
-from sleeplearning.lib.feature_extractor import *
 import shutil
 import time
 import numpy as np
@@ -12,6 +9,9 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from typing import List, Tuple
+root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
+sys.path.insert(0, root_dir)
+from sleeplearning.lib.feature_extractor import *
 from sleeplearning.lib.utils import AverageMeter
 import sleeplearning.lib.utils as utils
 
@@ -90,21 +90,23 @@ class Base(object):
                                                          self.ds['train_dist'],
                                                          self.cudaEfficient)
 
-
         # Training loop
         self.nepoch = 1
         bestmodel = copy.deepcopy(self.model)
         bestaccuracy = -1
         stop_train = False
         while not stop_train and self.nepoch <= ms['epochs']:
-            tr_loss, tr_acc, tr_tar, tr_pred = self.trainepoch(train_loader, self.nepoch)
-            val_loss, self.last_acc, val_tar, val_pred = self.score(val_loader)
+            tr_loss, tr_acc, tr_tar, tr_pred = self.trainepoch_(train_loader,
+                                                                self.nepoch)
+            val_loss, self.last_acc, val_tar, val_pred = self.valepoch_(
+                val_loader)
             # log accuracy and confusion matrix
             if self.logger is not None:
                 self.logger.scalar_summary('acc/train', tr_acc, self.nepoch)
                 self.logger.scalar_summary('loss/train', tr_loss,
                                            self.nepoch)
-                self.logger.scalar_summary('acc/val', self.last_acc, self.nepoch)
+                self.logger.scalar_summary('acc/val', self.last_acc,
+                                           self.nepoch)
                 self.logger.scalar_summary('loss/val', val_loss, self.nepoch)
                 np.savez(
                     os.path.join(self.logger.log_dir, 'pred_train_last.npz'),
@@ -114,7 +116,6 @@ class Base(object):
                     predictions=np.array(val_pred), targets=np.array(val_tar))
 
                 if self.last_acc > bestaccuracy or self.nepoch == ms['epochs']:
-
                     self.save_checkpoint_({
                         'epoch': self.nepoch,
                         'arch': self.arch,
@@ -124,12 +125,14 @@ class Base(object):
                         'best_prec1': max(bestaccuracy, self.last_acc),
                         'optimizer': self.optimizer.state_dict(),
                     }, self.last_acc > bestaccuracy,
-                                          self.logger.log_dir)
+                        self.logger.log_dir)
 
                 if self.last_acc > bestaccuracy:
                     shutil.copyfile(
-                        os.path.join(self.logger.log_dir, 'pred_train_last.npz'),
-                        os.path.join(self.logger.log_dir, 'pred_train_best.npz'))
+                        os.path.join(self.logger.log_dir,
+                                     'pred_train_last.npz'),
+                        os.path.join(self.logger.log_dir,
+                                     'pred_train_best.npz'))
                     shutil.copyfile(
                         os.path.join(self.logger.log_dir, 'pred_val_last.npz'),
                         os.path.join(self.logger.log_dir, 'pred_val_best.npz'))
@@ -148,7 +151,87 @@ class Base(object):
         self.model = bestmodel
         self.best_acc_ = bestaccuracy
 
-    def trainepoch(self, train_loader: DataLoader, epoch):
+    def score(self, subject_path):
+        import tempfile
+        top1 = AverageMeter()
+        subject_path = os.path.normpath(os.path.abspath(subject_path))
+        data_dir, subject_name = os.path.split(subject_path)
+        temp_path = tempfile.mkdtemp()
+        tmp_csv = os.path.join(temp_path, 'tmp_csv')
+        np.savetxt(tmp_csv, np.array([subject_name]), delimiter=",", fmt='%s')
+        test_loader = self.get_loader_from_csv_(data_dir, tmp_csv, 0, 100,
+                                                False)
+        self.model.eval()
+
+        for data, target in test_loader:
+            if self.cudaEfficient:
+                data, target = data.cuda(), target.cuda()
+            data, target = Variable(data).float(), Variable(
+                target).long()
+            # compute output
+            output = self.model(data)
+            (prec1,), _ = self.accuracy_(output, target,
+                                         topk=(1,))
+            top1.update(prec1, data.size(0))
+
+        return top1.avg
+
+    def predict(self, subject_path):
+        import tempfile
+        subject_path = os.path.normpath(os.path.abspath(subject_path))
+        data_dir, subject_name = os.path.split(subject_path)
+        temp_path = tempfile.mkdtemp()
+        tmp_csv = os.path.join(temp_path, 'tmp_csv')
+        np.savetxt(tmp_csv, np.array([subject_name]), delimiter=",", fmt='%s')
+        test_loader = self.get_loader_from_csv_(data_dir, tmp_csv, 0, 100,
+                                                False)
+        self.model.eval()
+        prediction = np.array([])
+        for data, target in test_loader:
+            if self.cudaEfficient:
+                data, target = data.cuda(), target.cuda()
+            data, target = Variable(data).float(), Variable(
+                target).long()
+            # compute output
+            output = self.model(data)
+            _, pred = output.topk(1, 1, True, True)
+            prediction = np.append(prediction, pred.data.cpu().numpy())
+        return prediction.astype(int)
+
+    def predict_proba(self, devX):
+        # TODO: fix dummy implementation
+        self.model.eval()
+        probas = []
+        for i in range(0, len(devX), self.batch_size):
+            Xbatch = Variable(devX[i:i + self.batch_size], volatile=True)
+            vals = F.softmax(self.model(Xbatch).data.cpu().numpy())
+            if not probas:
+                probas = vals
+            else:
+                probas = np.concatenate(probas, vals, axis=0)
+        return probas
+
+    def restore(self, checkpoint_dir):
+        checkpoint = torch.load(checkpoint_dir,
+                                map_location=self.remap_storage)
+
+        self.ds = checkpoint['ds']
+        self.ms = checkpoint['ms']
+        self.arch = checkpoint['arch']
+        self.nepoch = checkpoint['epoch']
+        self.best_acc_ = checkpoint['best_prec1']
+        self.model = utils.get_model_arch(self.arch, self.ms)
+        self.criterion, self.optimizer = utils.get_model(self.model, self.ms,
+                                                         self.ds['train_dist'],
+                                                         self.cudaEfficient)
+
+        self.model.load_state_dict(checkpoint['state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer'])
+        if self.verbose:
+            print("=> loaded model (epoch {}), Prec@1: {}"
+                  .format(self.nepoch, self.best_acc_))
+
+    def trainepoch_(self, train_loader: DataLoader, epoch):
         self.model.train()
         torch.set_grad_enabled(True)
         batch_time = AverageMeter()
@@ -169,7 +252,8 @@ class Base(object):
             loss = self.criterion(output, target)
 
             # measure accuracy and record loss
-            (prec1, prec2), prediction = self.accuracy_(output, target, topk=(1, 2))
+            (prec1, prec2), prediction = self.accuracy_(output, target,
+                                                        topk=(1, 2))
 
             predictions = np.append(predictions, prediction)
             targets = np.append(targets, target.data.cpu().numpy())
@@ -191,14 +275,13 @@ class Base(object):
               'Time {batch_time.sum:.1f}\t'
               'Loss {loss.avg:.2f}\t'
               'Prec@1 {top1.avg:.2f}\t'
-              'Prec@2 {top2.avg:.2f}'.format(
-            epoch, len(train_loader), batch_time=batch_time,
-            loss=losses, top1=top1, top2=top2))
-
+              'Prec@2 {top2.avg:.2f}'.format(epoch, len(train_loader),
+                                             batch_time=batch_time,
+                                             loss=losses, top1=top1, top2=top2))
         return losses.avg, top1.avg, targets, predictions
 
-    def score(self, val_loader: DataLoader) -> Tuple[float, float, np.array,
-                                                     np.array]:
+    def valepoch_(self, val_loader: DataLoader) -> Tuple[float, float, np.array,
+                                                         np.array]:
         batch_time = AverageMeter()
         losses = AverageMeter()
         top1 = AverageMeter()
@@ -241,71 +324,6 @@ class Base(object):
 
         return losses.avg, top1.avg, targets, predictions
 
-    def predict(self, subject_path):
-        import tempfile
-        subject_path = os.path.normpath(os.path.abspath(subject_path))
-        data_dir, subject_name = os.path.split(subject_path)
-        temp_path = tempfile.mkdtemp()
-        val_csv = os.path.join(temp_path, 'tmp_csv')
-        np.savetxt(val_csv, np.array([subject_name]), delimiter=",", fmt='%s')
-
-        ldr = utils.get_loader(self.ds['loader'])
-        test_ds = utils.SleepLearningDataset(data_dir, val_csv, 0,
-                                            self.ms['nclasses'],
-                                            FeatureExtractor(
-                                                self.ds['channels'])
-                                                .get_features(),
-                                            self.ds['nbrs'], ldr,
-                                             verbose=self.verbose)
-
-        test_loader = utils.get_sampler(test_ds, 100, False,
-                                        self.cudaEfficient, verbose=True)
-        self.model.eval()
-        prediction = np.array([])
-        for data, target in test_loader:
-            if self.cudaEfficient:
-                data, target = data.cuda(), target.cuda()
-            data, target = Variable(data, volatile=True).float(), Variable(
-                target).long()
-            # compute output
-            output = self.model(data)
-            _, pred = output.topk(1, 1, True, True)
-            prediction = np.append(prediction, pred.data.cpu().numpy())
-        return prediction.astype(int)
-
-    def predict_proba(self, devX):
-        # TODO: fix dummy implementation
-        self.model.eval()
-        probas = []
-        for i in range(0, len(devX), self.batch_size):
-            Xbatch = Variable(devX[i:i + self.batch_size], volatile=True)
-            vals = F.softmax(self.model(Xbatch).data.cpu().numpy())
-            if not probas:
-                probas = vals
-            else:
-                probas = np.concatenate(probas, vals, axis=0)
-        return probas
-
-    def restore(self, checkpoint_dir):
-        checkpoint = torch.load(checkpoint_dir,
-                                map_location=self.remap_storage)
-
-        self.ds = checkpoint['ds']
-        self.ms = checkpoint['ms']
-        self.arch = checkpoint['arch']
-        self.nepoch = checkpoint['epoch']
-        self.best_acc_ = checkpoint['best_prec1']
-        self.model = utils.get_model_arch(self.arch, self.ms)
-        self.criterion, self.optimizer = utils.get_model(self.model, self.ms,
-                                                         self.ds['train_dist'],
-                                                         self.cudaEfficient)
-
-        self.model.load_state_dict(checkpoint['state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer'])
-        if self.verbose:
-            print("=> loaded model (epoch {}), Prec@1: {}"
-                  .format(self.nepoch, self.best_acc_))
-
     @staticmethod
     def accuracy_(output, target, topk=(1,)) -> Tuple[
         List[float], torch.autograd.Variable]:
@@ -325,6 +343,21 @@ class Base(object):
                 (correct_k.mul_(100.0 / batch_size)).data.cpu().numpy().item())
         return topk_acc, pred[0]
 
+    def get_loader_from_csv_(self, data_dir, csv_path, fold, batch_size,
+                             shuffle):
+        ldr = utils.get_loader(self.ds['loader'])
+        dataset = utils.SleepLearningDataset(data_dir, csv_path, fold,
+                                             self.ms['nclasses'],
+                                             FeatureExtractor(
+                                                 self.ds['channels'])
+                                             .get_features(),
+                                             self.ds['nbrs'], ldr,
+                                             verbose=self.verbose)
+
+        data_loader = utils.get_sampler(dataset, batch_size, shuffle,
+                                        self.cudaEfficient,
+                                        verbose=self.verbose)
+        return data_loader
 
     def save_checkpoint_(self, state, is_best, dir):
         filename = os.path.join(dir, 'checkpoint.pth.tar')
