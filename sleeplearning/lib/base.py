@@ -90,6 +90,10 @@ class Base(object):
                                                          self.ds['train_dist'],
                                                          self.cudaEfficient)
 
+        if self.cudaEfficient:
+            self.model.cuda()
+            self.criterion.cuda()
+
         # Training loop
         self.nepoch = 1
         bestmodel = copy.deepcopy(self.model)
@@ -115,18 +119,6 @@ class Base(object):
                     os.path.join(self.logger.log_dir, 'pred_val_last.npz'),
                     predictions=np.array(val_pred), targets=np.array(val_tar))
 
-                if self.last_acc > bestaccuracy or self.nepoch == ms['epochs']:
-                    self.save_checkpoint_({
-                        'epoch': self.nepoch,
-                        'arch': self.arch,
-                        'ms': self.ms,
-                        'ds': self.ds,
-                        'state_dict': self.model.state_dict(),
-                        'best_prec1': max(bestaccuracy, self.last_acc),
-                        'optimizer': self.optimizer.state_dict(),
-                    }, self.last_acc > bestaccuracy,
-                        self.logger.log_dir)
-
                 if self.last_acc > bestaccuracy:
                     shutil.copyfile(
                         os.path.join(self.logger.log_dir,
@@ -149,6 +141,18 @@ class Base(object):
             self.nepoch += 1
 
         self.model = bestmodel
+
+        self.save_checkpoint_({
+            'epoch': self.nepoch,
+            'arch': self.arch,
+            'ms': self.ms,
+            'ds': self.ds,
+            'state_dict': self.model.state_dict(),
+            'best_prec1': bestaccuracy,
+            'optimizer': self.optimizer.state_dict(),
+        }, True,
+            self.logger.log_dir)
+
         self.best_acc_ = bestaccuracy
 
     def score(self, subject_path):
