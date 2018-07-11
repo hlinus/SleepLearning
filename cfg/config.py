@@ -10,9 +10,9 @@ sys.path.insert(0, root_dir)
 basedir = os.path.join(root_dir, 'sleeplearning', 'lib')
 #ex = Experiment(base_dir=basedir, ingredients=[general])
 ex = Experiment(base_dir=basedir)
-MONGO_OBSERVER = MongoObserver.create(url='mongodb://toor:y0qXDe3qumoawG0rPfnS'
-                                          '@cab-e81-31/admin?authMechanism'
-                                          '=SCRAM-SHA-1', db_name='sacred')
+mongo_url = 'mongodb://toor:y0qXDe3qumoawG0rPfnS@cab-e81-31/admin?authMechanism' \
+            '=SCRAM-SHA-1'
+MONGO_OBSERVER = MongoObserver.create(url=mongo_url, db_name='sacred')
 ex.observers.append(MONGO_OBSERVER)
 
 
