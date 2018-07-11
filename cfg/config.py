@@ -48,10 +48,54 @@ def multvarnet():
          'epochs': 200,
          'dropout': .5,
          'optim': 'adam,lr=0.00005',
-         'fc_d' : [[4096,.5],[100,0]],
+         'fc_d' : [[4096,.3],[2048,.3],[1048,.1],[512,0]],
          'input_dim': None,  # will be set automatically
          'weighted_loss': True
     }
+
+
+@ex.named_config
+def E1M2():
+    ds = {
+        'channels': [('E1-M2', ['ConvToInt16()'])]
+    }
+
+@ex.named_config
+def O2M1():
+    ds = {
+        'channels': [('O2-M1', ['ConvToInt16()'])]
+    }
+
+@ex.named_config
+def C4M1():
+    ds = {
+        'channels': [('C4-M1', ['ConvToInt16()'])]
+    }
+
+@ex.named_config
+def C3M2():
+    ds = {
+        'channels': [('C3-M2', ['ConvToInt16()'])]
+    }
+
+@ex.named_config
+def F3M2():
+    ds = {
+        'channels': [('F3-M2', ['ConvToInt16()'])]
+    }
+
+@ex.named_config
+def F4M1():
+    ds = {
+        'channels': [('F4-M1', ['ConvToInt16()'])]
+    }
+
+@ex.named_config
+def O1M2():
+    ds = {
+        'channels': [('O1-M2', ['ConvToInt16()'])]
+    }
+
 
 
 @ex.named_config
@@ -133,14 +177,5 @@ def one_channel():
     ds ={
         'channels': [
             ('F3-M2', ['OneDScaler()']),
-    ]
-    }
-
-@ex.named_config
-def one_channel_int16():
-
-    ds ={
-        'channels': [
-            ('F3-M2', ['ConvToInt16()'])
     ]
     }
