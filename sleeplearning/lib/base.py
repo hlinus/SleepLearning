@@ -42,7 +42,8 @@ class Base(object):
 
     def fit(self, arch, ms, data_dir, loader, train_csv, val_csv, channels,
             nclasses, fold,
-            nbrs, batch_size_train, batch_size_val, oversample):
+            nbrs, batch_size_train, batch_size_val, oversample,
+            early_stop=False):
 
         ldr = utils.get_loader(loader)
 
@@ -62,7 +63,7 @@ class Base(object):
                                             nbrs,
                                             ldr, verbose=self.verbose)
 
-        print("TRAIN LOADER:")
+        print("\nTRAIN LOADER:")
         train_loader = utils.get_sampler(train_ds, batch_size_train,
                                          oversample, self.cudaEfficient,
                                          verbose=True)
@@ -70,7 +71,6 @@ class Base(object):
         val_loader = utils.get_sampler(val_ds, batch_size_val,
                                        False,
                                        self.cudaEfficient, verbose=True)
-        print("\n\n")
 
         # save parameters for model reloading
         ms['input_dim'] = train_ds.dataset_info['input_shape']
@@ -94,16 +94,26 @@ class Base(object):
             self.model.cuda()
             self.criterion.cuda()
 
+        print("\nMODEL:")
+        print(self.model)
+        pytorch_total_params = sum(
+            p.numel() for p in self.model.parameters() if p.requires_grad)
+        print("\n # OF TRAINABLE PARAMETERS:", pytorch_total_params)
+        print("\n\n")
+
         # Training loop
         self.nepoch = 1
         bestmodel = copy.deepcopy(self.model)
         bestaccuracy = -1
         stop_train = False
+        early_stop_count = 0
+        self.tenacity = 15
         while not stop_train and self.nepoch <= ms['epochs']:
             tr_loss, tr_acc, tr_tar, tr_pred = self.trainepoch_(train_loader,
                                                                 self.nepoch)
             val_loss, self.last_acc, val_tar, val_pred = self.valepoch_(
                 val_loader)
+
             # log accuracy and confusion matrix
             if self.logger is not None:
                 self.logger.scalar_summary('acc/train', tr_acc, self.nepoch)
@@ -114,10 +124,12 @@ class Base(object):
                 self.logger.scalar_summary('loss/val', val_loss, self.nepoch)
                 np.savez(
                     os.path.join(self.logger.log_dir, 'pred_train_last.npz'),
-                    predictions=np.array(tr_pred), targets=np.array(tr_tar))
+                    predictions=np.array(tr_pred), targets=np.array(tr_tar),
+                    acc=tr_acc, epoch=self.nepoch)
                 np.savez(
                     os.path.join(self.logger.log_dir, 'pred_val_last.npz'),
-                    predictions=np.array(val_pred), targets=np.array(val_tar))
+                    predictions=np.array(val_pred), targets=np.array(
+                        val_tar), acc=self.last_acc, epoch=self.nepoch)
 
                 if self.last_acc > bestaccuracy:
                     shutil.copyfile(
@@ -129,7 +141,6 @@ class Base(object):
                         os.path.join(self.logger.log_dir, 'pred_val_last.npz'),
                         os.path.join(self.logger.log_dir, 'pred_val_best.npz'))
 
-                    bestmodel = copy.deepcopy(self.model)
                     self.logger.cm_summary(tr_pred, tr_tar, 'cm/train',
                                            self.nepoch,
                                            ['W', 'N1', 'N2', 'N3', 'REM'])
@@ -137,21 +148,19 @@ class Base(object):
                                            self.nepoch,
                                            ['W', 'N1', 'N2', 'N3', 'REM'])
 
-            bestaccuracy = max(bestaccuracy, self.last_acc)
+            # handling early stop
+            if self.last_acc > bestaccuracy:
+                bestaccuracy = self.last_acc
+                bestmodel = copy.deepcopy(self.model)
+            elif early_stop:
+                if early_stop_count >= self.tenacity:
+                    stop_train = True
+                early_stop_count += 1
+
             self.nepoch += 1
 
         self.model = bestmodel
-
-        self.save_checkpoint_({
-            'epoch': self.nepoch,
-            'arch': self.arch,
-            'ms': self.ms,
-            'ds': self.ds,
-            'state_dict': self.model.state_dict(),
-            'best_prec1': bestaccuracy,
-            'optimizer': self.optimizer.state_dict(),
-        }, True,
-            self.logger.log_dir)
+        self.last_acc = bestaccuracy
 
         self.best_acc_ = bestaccuracy
 
@@ -223,14 +232,21 @@ class Base(object):
         self.ms = checkpoint['ms']
         self.arch = checkpoint['arch']
         self.nepoch = checkpoint['epoch']
-        self.best_acc_ = checkpoint['best_prec1']
+        self.best_acc_ = checkpoint['best_acc']
+        self.last_acc = checkpoint['last_acc']
         self.model = utils.get_model_arch(self.arch, self.ms)
+        # TODO: Make sure correct model restored (same modelstr?)
         self.criterion, self.optimizer = utils.get_model(self.model, self.ms,
                                                          self.ds['train_dist'],
                                                          self.cudaEfficient)
 
         self.model.load_state_dict(checkpoint['state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer'])
+
+        if self.cudaEfficient:
+            self.model.cuda()
+            self.criterion.cuda()
+
         if self.verbose:
             print("=> loaded model (epoch {}), Prec@1: {}"
                   .format(self.nepoch, self.best_acc_))
@@ -363,13 +379,26 @@ class Base(object):
                                         verbose=self.verbose)
         return data_loader
 
-    def save_checkpoint_(self, state, is_best, dir):
-        filename = os.path.join(dir, 'checkpoint.pth.tar')
-        torch.save(state, filename)
-        if self.logger is not None:
-            self.logger._run.add_artifact(filename)
-        if is_best:
-            best_name = os.path.join(dir, 'model_best.pth.tar')
-            shutil.copyfile(filename, best_name)
-            if self.logger is not None:
+    def save_checkpoint_(self):
+        state = {
+            'epoch': self.nepoch,
+            'arch': self.arch,
+            'ms': self.ms,
+            'modelstr': str(self.model),
+            'ds': self.ds,
+            'state_dict': self.model.state_dict(),
+            'last_acc': self.last_acc,
+            'best_acc': self.best_acc_,
+            'optimizer': self.optimizer.state_dict(),
+        }
+
+        if self.last_acc >= self.best_acc_:
+            best_name = os.path.join(self.logger.log_dir, 'model_best.pth.tar')
+            torch.save(state, best_name)
+            if self.logger._run is not None:
                 self.logger._run.add_artifact(best_name)
+        else:
+            filename = os.path.join(dir, 'checkpoint.pth.tar')
+            torch.save(state, filename)
+            if self.logger._run is not None:
+                self.logger._run.add_artifact(filename)
