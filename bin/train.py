@@ -13,9 +13,8 @@ import sleeplearning.lib.utils as utils
 import json
 
 
-
 @ex.main
-def train(ds, arch, ms, cuda, log_dir, seed, _run):
+def train(ds, arch, ms, cuda, log_dir, seed, save_best_model,_run):
     # fix seed
     print("seed: ", seed)
     np.random.seed(seed)
@@ -27,22 +26,30 @@ def train(ds, arch, ms, cuda, log_dir, seed, _run):
         log_dir = os.path.join(log_dir, str(_run._id),
                            _run.experiment_info['name'])
     else:
+        import pathlib
         log_dir = os.path.join(log_dir, 'fold' + str(ds['fold']))
+        pathlib.Path(log_dir).mkdir(parents=True, exist_ok=True)
+        cfg_path = os.path.abspath(
+            os.path.join(log_dir, os.pardir, 'config.json'))
+        with open(cfg_path, 'w') as outfile:
+            json.dump(_run.config, outfile)
+        print("log_dir JSON: ", log_dir)
 
     if _run._id is not None:
+        # Capture TensorBoard logs with sacred
         with LogFileWriter(ex):
             logger = Logger(log_dir, _run)
-            cfg_path = os.path.abspath(os.path.join(log_dir, os.pardir, 'config.json'))
-            with open(cfg_path, 'w') as outfile:
-                json.dump(_run.config, outfile)
-            print("log_dir: ", log_dir)
     else:
-        log_dir = None
-        logger = None
+        logger = Logger(log_dir, None)
 
     # Fit the model
     clf = Base(logger=logger, cuda=cuda, verbose=True)
-    clf.fit(arch, ms, **ds)
+    clf.fit(arch, ms, **ds, early_stop=False)
+
+    _run.info['modelstr'] = str(clf.model)
+
+    if save_best_model:
+        clf.save_checkpoint_()
 
     return clf.best_acc_
 
