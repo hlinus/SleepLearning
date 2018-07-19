@@ -56,10 +56,6 @@ class SleepLearningDataset(object):
                 for k, psgs in subject.psgs.items():
                     psgs1 = psgs.reshape(
                         (-1, subject.sampling_rate_ * subject.epoch_length))
-                    if subject.sampling_rate_ > 100:
-                        # downsample to 100 Hz
-                        psgs1 = resample(psgs1, subject.epoch_length * 100,
-                                         axis=1)
                     psgs_reshaped[k] = psgs1
                 # if spectogram used:
                 # [num_epochs X num_channels X freq_domain X time_domain]

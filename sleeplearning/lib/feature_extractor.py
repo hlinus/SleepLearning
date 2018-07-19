@@ -1,6 +1,6 @@
 import numpy as np
 from scipy import signal
-from scipy.signal import firwin, lfilter
+from scipy.signal import firwin, lfilter, resample
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline, FeatureUnion
 
@@ -90,7 +90,6 @@ class BandPass(BaseEstimator, TransformerMixin):
         return x
 
 
-
 class TwoDScaler(BaseEstimator, TransformerMixin):
     """
         Zero mean and unit variance scaler
@@ -106,6 +105,23 @@ class TwoDScaler(BaseEstimator, TransformerMixin):
         norm = (x - np.mean(x, axis=(2, 3), keepdims=True)) \
                / (np.std(x, axis=(2, 3), keepdims=True) + 1e-4)
         return norm
+
+
+class Resample(BaseEstimator, TransformerMixin):
+    """
+        Zero mean and unit variance scaler
+    """
+
+    def __init__(self, epoch_len: int = 30, fs: int = 100):
+        self.epoch_len = epoch_len
+        self.fs = fs
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, x):
+        x = resample(x, self.epoch_len * self.fs, axis=2)
+        return x
 
 
 class OneDScaler(BaseEstimator, TransformerMixin):
