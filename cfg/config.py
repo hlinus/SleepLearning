@@ -8,7 +8,6 @@ root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 
 basedir = os.path.join(root_dir, 'sleeplearning', 'lib')
-#ex = Experiment(base_dir=basedir, ingredients=[general])
 ex = Experiment(base_dir=basedir)
 mongo_url = 'mongodb://toor:y0qXDe3qumoawG0rPfnS@cab-e81-31/admin?authMechanism' \
             '=SCRAM-SHA-1'
@@ -21,7 +20,8 @@ def cfg():
     cmt = ''  # comment for this run
     cuda = torch.cuda.is_available()
     seed = 42  # for reproducibility
-    log_dir = '../logs'
+    log_dir = '/cluster/scratch/hlinus/logs'
+    save_best_model = False
 
     # default dataset settings
     ds = {
@@ -32,7 +32,7 @@ def cfg():
         'batch_size_train': 32,
         'batch_size_val': 250,
         'loader': 'Physionet18',
-        'nbrs': 0,
+        'nbrs': 2,
         'fold': None,  # only specify for CV
         'oversample': False,
         'nclasses': 5,
@@ -48,52 +48,183 @@ def multvarnet():
          'epochs': 200,
          'dropout': .5,
          'optim': 'adam,lr=0.00005',
-         'fc_d' : [[4096,.3],[2048,.3],[1048,.1],[512,0]],
+         'fc_d' : [[512,0]],
+         'weighted_loss': True
+    }
+
+
+@ex.named_config
+def multvarnet2d():
+    arch = 'MultivariateNet2d'
+
+    ms = {
+         'epochs': 100,
+         'dropout': .5,
+         'optim': 'adam,lr=0.00005',
+         'fc_d' : [],
          'input_dim': None,  # will be set automatically
          'weighted_loss': True
     }
 
 
 @ex.named_config
-def E1M2():
-    ds = {
-        'channels': [('E1-M2', ['ConvToInt16()'])]
+def F3M2_C4M1_E1M2_2D2():
+    ds ={
+        'channels': [
+            ('F3-M2', [
+                                'BandPass(fs=200, lowpass=45, highpass=.5)',
+                                'Resample(epoch_len=30, fs=100)',
+                                'Spectrogram(fs=200, window=300, stride=100)',
+                                'CutFrequencies(fs=200, window=300, '
+                                'lower=1, upper=45)',
+                                'TwoDScaler()'
+                                ]
+             ),
+            ('C4-M1', [
+                                'BandPass(fs=200, lowpass=45, highpass=.5)',
+                                'Spectrogram(fs=200, window=300, stride=100)',
+                                'CutFrequencies(fs=200, window=300, '
+                                'lower=1, upper=45)',
+                                'TwoDScaler()'
+                                ]),
+            ('E1-M2', [
+                                'BandPass(fs=200, lowpass=45, highpass=.5)',
+                                'Spectrogram(fs=200, window=300, stride=100)',
+                                'CutFrequencies(fs=200, window=300, '
+                                'lower=1, upper=45)',
+                                'TwoDScaler()'
+                                ]),
+    ]
     }
 
 @ex.named_config
-def O2M1():
+def F3M2_C4M1_E1M2_2D():
     ds = {
-        'channels': [('O2-M1', ['ConvToInt16()'])]
+        'channels': [('F3-M2', [
+                    'Resample(epoch_len=30, fs=100)',
+                    'BandPass(fs=100, lowpass=45, highpass=.5)',
+                    'Spectrogram(fs=100, window=200, stride=50)',
+                    'TwoDScaler()'
+                    ]
+                      ),
+                     ('C4-M1', [
+                         'Resample(epoch_len=30, fs=100)',
+                         'BandPass(fs=100, lowpass=45, highpass=.5)',
+                         'Spectrogram(fs=100, window=200, stride=50)',
+                         'TwoDScaler()'
+                     ]
+                      ),
+                     ('E1-M2', [
+                         'Resample(epoch_len=30, fs=100)',
+                         'BandPass(fs=100, lowpass=45, highpass=.5)',
+                         'Spectrogram(fs=100, window=200, stride=50)',
+                         'TwoDScaler()'
+                     ]
+                      )
+                     ]
     }
 
-@ex.named_config
-def C4M1():
-    ds = {
-        'channels': [('C4-M1', ['ConvToInt16()'])]
-    }
-
-@ex.named_config
-def C3M2():
-    ds = {
-        'channels': [('C3-M2', ['ConvToInt16()'])]
-    }
 
 @ex.named_config
 def F3M2():
     ds = {
-        'channels': [('F3-M2', ['ConvToInt16()'])]
+        'channels': [
+            ('F3-M2', ['ConvToInt16()'])
+        ]
     }
 
 @ex.named_config
-def F4M1():
+def F3M2_2D():
     ds = {
-        'channels': [('F4-M1', ['ConvToInt16()'])]
+        'channels': [
+            ('F3-M2', [
+                'Resample(epoch_len=30, fs=100)',
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'TwoDScaler()'
+            ]
+            )
+        ]
     }
 
 @ex.named_config
-def O1M2():
+def F3M2_200Hz_2D():
     ds = {
-        'channels': [('O1-M2', ['ConvToInt16()'])]
+        'channels': [('F3-M2', [
+                                'BandPass(fs=200, lowpass=45, highpass=.5)',
+                                'Spectrogram(fs=200, window=300, stride=200)',
+                                'CutFrequencies(fs=200, window=300, '
+                                'lower=0, upper=45)',
+                                'TwoDScaler()'
+                                ]
+                      )]
+    }
+
+
+@ex.named_config
+def E1M2_2D():
+    ds = {
+        'channels': [('E1-M2', [
+                'Resample(epoch_len=30, fs=100)',
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'TwoDScaler()'
+            ])]
+    }
+
+@ex.named_config
+def O2M1_2D():
+    ds = {
+        'channels': [('O2-M1', [
+                'Resample(epoch_len=30, fs=100)',
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'TwoDScaler()'
+            ])]
+    }
+
+@ex.named_config
+def C4M1_2D():
+    ds = {
+        'channels': [('C4-M1', [
+                'Resample(epoch_len=30, fs=100)',
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'TwoDScaler()'
+            ])]
+    }
+
+@ex.named_config
+def C3M2_2D():
+    ds = {
+        'channels': [('C3-M2', [
+                'Resample(epoch_len=30, fs=100)',
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'TwoDScaler()'
+            ])]
+    }
+
+@ex.named_config
+def F4M1_2D():
+    ds = {
+        'channels': [('F4-M1', [
+                'Resample(epoch_len=30, fs=100)',
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'TwoDScaler()'
+            ])]
+    }
+
+@ex.named_config
+def O1M2_2D():
+    ds = {
+        'channels': [('O1-M2', [
+                'Resample(epoch_len=30, fs=100)',
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'TwoDScaler()'
+            ])]
     }
 
 
@@ -102,9 +233,22 @@ def O1M2():
 def sleepedf():
     loader = 'Sleepedf'
 
-    channels = [
+    dchannels = [
             ('EEG-Fpz-Cz', []),
     ]
+
+@ex.named_config
+def sleepedf_2D():
+    ds = {
+        'loader': 'Sleepedf',
+        'channels': [
+        ('EEG-Fpz-Cz', [
+            'BandPass(fs=100, lowpass=45, highpass=.5)',
+            'Spectrogram(fs=100, window=150, stride=100)',
+            'TwoDScaler()'
+        ])
+        ]
+    }
 
 
 @ex.named_config
