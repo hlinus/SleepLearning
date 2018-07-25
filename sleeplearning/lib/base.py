@@ -2,7 +2,6 @@ import os
 import sys
 import shutil
 import time
-import numpy as np
 import copy
 import torch
 from torch.autograd import Variable
@@ -65,12 +64,12 @@ class Base(object):
 
         print("\nTRAIN LOADER:")
         train_loader = utils.get_sampler(train_ds, batch_size_train,
-                                         oversample, self.cudaEfficient,
+                                         oversample, True, self.cudaEfficient,
                                          verbose=True)
         print("\nVAL LOADER:")
         val_loader = utils.get_sampler(val_ds, batch_size_val,
-                                       False,
-                                       self.cudaEfficient, verbose=True)
+                                       False, False, self.cudaEfficient,
+                                       verbose=True)
 
         # save parameters for model reloading
         ms['input_dim'] = train_ds.dataset_info['input_shape']
@@ -96,9 +95,12 @@ class Base(object):
 
         print("\nMODEL:")
         print(self.model)
-        pytorch_total_params = sum(
+        nbr_trainable_params = sum(
             p.numel() for p in self.model.parameters() if p.requires_grad)
-        print("\n # OF TRAINABLE PARAMETERS:", pytorch_total_params)
+        print("\n # OF TRAINABLE PARAMETERS:", nbr_trainable_params)
+        nbr__non_trainable_params = sum(
+            p.numel() for p in self.model.parameters() if not p.requires_grad)
+        print("\n # OF FROZEN PARAMETERS:", nbr__non_trainable_params)
         print("\n\n")
 
         # Training loop
@@ -174,20 +176,26 @@ class Base(object):
         np.savetxt(tmp_csv, np.array([subject_name]), delimiter=",", fmt='%s')
         test_loader = self.get_loader_from_csv_(data_dir, tmp_csv, 0, 100,
                                                 False)
+
+        predictions = np.array([], dtype=int)
+        targets = np.array([], dtype=int)
         self.model.eval()
+        with torch.no_grad():
+            for data, target in test_loader:
+                if self.cudaEfficient:
+                    data, target = data.cuda(), target.cuda()
+                data, target = Variable(data).float(), Variable(
+                    target).long()
+                # compute output
+                output = self.model(data)
+                (prec1,), prediction = self.accuracy_(output, target,
+                                             topk=(1,))
 
-        for data, target in test_loader:
-            if self.cudaEfficient:
-                data, target = data.cuda(), target.cuda()
-            data, target = Variable(data).float(), Variable(
-                target).long()
-            # compute output
-            output = self.model(data)
-            (prec1,), _ = self.accuracy_(output, target,
-                                         topk=(1,))
-            top1.update(prec1, data.size(0))
+                predictions = np.append(predictions, prediction)
+                targets = np.append(targets, target.data.cpu().numpy())
+                top1.update(prec1, data.size(0))
 
-        return top1.avg
+        return top1.avg, predictions, targets
 
     def predict(self, subject_path):
         import tempfile
@@ -200,34 +208,35 @@ class Base(object):
                                                 False)
         self.model.eval()
         prediction = np.array([])
-        for data, target in test_loader:
-            if self.cudaEfficient:
-                data, target = data.cuda(), target.cuda()
-            data, target = Variable(data).float(), Variable(
-                target).long()
-            # compute output
-            output = self.model(data)
-            _, pred = output.topk(1, 1, True, True)
-            prediction = np.append(prediction, pred.data.cpu().numpy())
+        with torch.no_grad():
+            for data, target in test_loader:
+                if self.cudaEfficient:
+                    data, target = data.cuda(), target.cuda()
+                data, target = Variable(data).float(), Variable(
+                    target).long()
+                # compute output
+                output = self.model(data)
+                _, pred = output.topk(1, 1, True, True)
+                prediction = np.append(prediction, pred.data.cpu().numpy())
         return prediction.astype(int)
 
     def predict_proba(self, devX):
         # TODO: fix dummy implementation
         self.model.eval()
         probas = []
-        for i in range(0, len(devX), self.batch_size):
-            Xbatch = Variable(devX[i:i + self.batch_size], volatile=True)
-            vals = F.softmax(self.model(Xbatch).data.cpu().numpy())
-            if not probas:
-                probas = vals
-            else:
-                probas = np.concatenate(probas, vals, axis=0)
+        with torch.no_grad():
+            for i in range(0, len(devX), self.batch_size):
+                Xbatch = Variable(devX[i:i + self.batch_size], volatile=True)
+                vals = F.softmax(self.model(Xbatch).data.cpu().numpy())
+                if not probas:
+                    probas = vals
+                else:
+                    probas = np.concatenate(probas, vals, axis=0)
         return probas
 
     def restore(self, checkpoint_dir):
         checkpoint = torch.load(checkpoint_dir,
                                 map_location=self.remap_storage)
-
         self.ds = checkpoint['ds']
         self.ms = checkpoint['ms']
         self.arch = checkpoint['arch']
@@ -241,7 +250,9 @@ class Base(object):
                                                          self.cudaEfficient)
 
         self.model.load_state_dict(checkpoint['state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer'])
+        # Only load if optimizer is not null (average of trained models)
+        if checkpoint['optimizer']:
+            self.optimizer.load_state_dict(checkpoint['optimizer'])
 
         if self.cudaEfficient:
             self.model.cuda()
@@ -253,7 +264,6 @@ class Base(object):
 
     def trainepoch_(self, train_loader: DataLoader, epoch):
         self.model.train()
-        torch.set_grad_enabled(True)
         batch_time = AverageMeter()
         losses = AverageMeter()
         top1 = AverageMeter()
@@ -282,10 +292,12 @@ class Base(object):
             top1.update(prec1, data.size(0))
             top2.update(prec2, data.size(0))
 
-            # compute gradient and do Adam step
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
+            # compute gradient and do Adam step if model has any trainable
+            # parameters (not just averaging trained experts)
+            if self.optimizer:
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -306,33 +318,33 @@ class Base(object):
         losses = AverageMeter()
         top1 = AverageMeter()
         top2 = AverageMeter()
-        prediction = np.array([])
         self.model.eval()
-        torch.set_grad_enabled(False)
+
         end = time.time()
         predictions = np.array([], dtype=int)
         targets = np.array([], dtype=int)
-        for batch_idx, (data, target) in enumerate(val_loader):
-            if self.cudaEfficient:
-                data, target = data.cuda(), target.cuda()
-            data, target = Variable(data).float(), Variable(target).long()
+        with torch.no_grad():
+            for batch_idx, (data, target) in enumerate(val_loader):
+                if self.cudaEfficient:
+                    data, target = data.cuda(), target.cuda()
+                data, target = Variable(data).float(), Variable(target).long()
 
-            # compute output
-            output = self.model(data)
-            loss = self.criterion(output, target)
+                # compute output
+                output = self.model(data)
+                loss = self.criterion(output, target)
 
-            # measure accuracy and record loss
-            (prec1, prec2), prediction = self.accuracy_(output, target,
-                                                        topk=(1, 2))
-            predictions = np.append(predictions, prediction)
-            targets = np.append(targets, target.data.cpu().numpy())
-            losses.update(loss.item(), data.size(0))
-            top1.update(prec1, data.size(0))
-            top2.update(prec2, data.size(0))
+                # measure accuracy and record loss
+                (prec1, prec2), prediction = self.accuracy_(output, target,
+                                                            topk=(1, 2))
+                predictions = np.append(predictions, prediction)
+                targets = np.append(targets, target.data.cpu().numpy())
+                losses.update(loss.item(), data.size(0))
+                top1.update(prec1, data.size(0))
+                top2.update(prec2, data.size(0))
 
-            # measure elapsed time
-            batch_time.update(time.time() - end)
-            end = time.time()
+                # measure elapsed time
+                batch_time.update(time.time() - end)
+                end = time.time()
 
         print('Val:  [{0}/{0}]\t\t'
               'Time {batch_time.sum:.1f}\t'
@@ -374,7 +386,7 @@ class Base(object):
                                              self.ds['nbrs'], ldr,
                                              verbose=self.verbose)
 
-        data_loader = utils.get_sampler(dataset, batch_size, shuffle,
+        data_loader = utils.get_sampler(dataset, batch_size, False, shuffle,
                                         self.cudaEfficient,
                                         verbose=self.verbose)
         return data_loader
@@ -389,7 +401,8 @@ class Base(object):
             'state_dict': self.model.state_dict(),
             'last_acc': self.last_acc,
             'best_acc': self.best_acc_,
-            'optimizer': self.optimizer.state_dict(),
+            'optimizer': self.optimizer.state_dict() if self.optimizer else
+            None,
         }
 
         if self.last_acc >= self.best_acc_:

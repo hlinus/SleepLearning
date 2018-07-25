@@ -12,7 +12,8 @@ from scipy.signal import resample
 from torch import optim
 from torch.utils.data import DataLoader
 from typing import List
-from torch.utils.data.sampler import WeightedRandomSampler, RandomSampler
+from torch.utils.data.sampler import WeightedRandomSampler, RandomSampler, \
+    SequentialSampler
 from sleeplearning.lib.loaders.baseloader import BaseLoader
 from sleeplearning.lib.feature_extractor import FeatureExtractor
 from sleeplearning.lib.models import *
@@ -124,17 +125,20 @@ class SleepLearningDataset(object):
 
 
 def get_sampler(ds: SleepLearningDataset,
-                batch_size: int, oversample: bool, cuda: bool,
-                verbose):
+                batch_size: int, oversample: bool, shuffle: bool,
+                cuda: bool, verbose: bool = True):
     kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
+    assert(not (oversample and shuffle)) # can not oversample but not shuffle
 
     if oversample:
         class_count = np.fromiter(ds.dataset_info['class_distribution'].values(), dtype=np.float32)
         weight = 1. / class_count
         samples_weight = weight[ds.targets].astype(np.float32)
         sampler = WeightedRandomSampler(samples_weight, len(samples_weight))
-    else:
+    elif shuffle:
         sampler = RandomSampler(ds)
+    else:
+        sampler = SequentialSampler(ds)
 
     if verbose:
         print('class distribution:', ds.dataset_info['class_distribution'])
@@ -165,8 +169,10 @@ def get_model_arch(arch, ms):
 
 def get_model(arch, ms, class_dist=None, cuda=True, verbose=False):
     optim_fn, optim_params = get_optimizer(ms['optim'])
+    params = [p for p in arch.parameters() if p.requires_grad]
 
-    optimizer = optim_fn(arch.parameters(), **optim_params)
+    optimizer = optim_fn(params, **optim_params) if params else None
+
     # TODO: refactor to get_loss(train_ds, weighted_loss: bool)
     if ms['weighted_loss']:
         # TODO: assure weights are in correct order
