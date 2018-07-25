@@ -15,6 +15,51 @@ except ImportError:
     from io import BytesIO  # Python 3.x
 
 
+def cm_figure_(prediction, truth, classes):
+    cm = confusion_matrix(truth, prediction, labels=range(len(classes)))
+    num_classes = cm.shape[0]
+    per_class_metrics = np.array(
+        precision_recall_fscore_support(truth, prediction, beta=1.0,
+                                        labels=range(
+                                            len(classes)))).T.round(2)
+    cm_norm = cm.astype('float') * 1 / cm.sum(axis=1)[:, np.newaxis]
+    cm_norm = np.nan_to_num(cm_norm, copy=True)
+
+    fig = plt.figure(figsize=(3, 2), dpi=320, facecolor='w',
+                     edgecolor='k')
+    ax = fig.add_subplot(1, 1, 1)
+    im = ax.imshow(
+        np.concatenate((cm, np.zeros((len(classes), 4))), axis=1),
+        cmap='Oranges')
+    classes += ['PR', 'RE', 'F1', 'S']
+    xtick_marks = np.arange(len(classes))
+    ytick_marks = np.arange(len(classes) - 4)
+
+    ax.set_xlabel('Predicted', fontsize=6, weight='bold')
+    ax.set_xticks(xtick_marks)
+    c = ax.set_xticklabels(classes, fontsize=4, ha='center')
+    ax.xaxis.set_label_position('top')
+    ax.xaxis.tick_top()
+    ax.set_ylabel('True Label', fontsize=6, weight='bold')
+    ax.set_yticks(ytick_marks)
+    ax.set_yticklabels(classes[:-4], fontsize=4, va='center')
+    ax.yaxis.set_label_position('left')
+    ax.yaxis.tick_left()
+
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        ax.text(j, i, '{}\n({:.2f})'.format(cm[i, j], cm_norm[i, j]),
+                horizontalalignment="center", fontsize=2,
+                verticalalignment='center', color="black")
+    for i, j in itertools.product(range(cm.shape[0]),
+                                  range(cm.shape[1], cm.shape[1] + 4)):
+        val = per_class_metrics[i, j - num_classes]
+        ax.text(j, i, val if j != cm.shape[1] + 3 else int(val),
+                horizontalalignment="center", fontsize=2,
+                verticalalignment='center', color="black")
+    fig.set_tight_layout(True)
+    return fig
+
+
 class Logger(object):
 
     def __init__(self, log_dir, _run):
@@ -28,7 +73,8 @@ class Logger(object):
         summary = tf.Summary(
             value=[tf.Summary.Value(tag=tag, simple_value=value)])
         self.writer.add_summary(summary, step)
-        self._run.log_scalar(tag, value, step)
+        if self._run is not None:
+            self._run.log_scalar(tag, value, step)
 
     def cm_summary(self, prediction, truth, tag, step, classes):
         """
@@ -37,47 +83,7 @@ class Logger(object):
             predict_labels                  : These are you predicted classification categories
             step                            : Training step (batch/epoch)
         """
-        cm = confusion_matrix(truth, prediction, labels=range(len(classes)))
-        num_classes = cm.shape[0]
-        per_class_metrics = np.array(
-            precision_recall_fscore_support(truth, prediction, beta=1.0,
-                                            labels=range(
-                                                len(classes)))).T.round(2)
-        cm_norm = cm.astype('float') * 1 / cm.sum(axis=1)[:, np.newaxis]
-        cm_norm = np.nan_to_num(cm_norm, copy=True)
-
-        fig = plt.figure(figsize=(3, 2), dpi=320, facecolor='w',
-                         edgecolor='k')
-        ax = fig.add_subplot(1, 1, 1)
-        im = ax.imshow(
-            np.concatenate((cm, np.zeros((len(classes), 4))), axis=1),
-            cmap='Oranges')
-        classes += ['PR', 'RE', 'F1', 'S']
-        xtick_marks = np.arange(len(classes))
-        ytick_marks = np.arange(len(classes) - 4)
-
-        ax.set_xlabel('Predicted', fontsize=6, weight='bold')
-        ax.set_xticks(xtick_marks)
-        c = ax.set_xticklabels(classes, fontsize=4, ha='center')
-        ax.xaxis.set_label_position('top')
-        ax.xaxis.tick_top()
-        ax.set_ylabel('True Label', fontsize=6, weight='bold')
-        ax.set_yticks(ytick_marks)
-        ax.set_yticklabels(classes[:-4], fontsize=4, va='center')
-        ax.yaxis.set_label_position('left')
-        ax.yaxis.tick_left()
-
-        for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-            ax.text(j, i, '{}\n({:.2f})'.format(cm[i, j], cm_norm[i, j]),
-                    horizontalalignment="center", fontsize=2,
-                    verticalalignment='center', color="black")
-        for i, j in itertools.product(range(cm.shape[0]),
-                                      range(cm.shape[1], cm.shape[1] + 4)):
-            val = per_class_metrics[i, j - num_classes]
-            ax.text(j, i, val if j != cm.shape[1] + 3 else int(val),
-                    horizontalalignment="center", fontsize=2,
-                    verticalalignment='center', color="black")
-        fig.set_tight_layout(True)
+        fig = cm_figure_(prediction, truth, classes)
         summary = tfplot.figure.to_summary(fig, tag=tag)
         plt.close()
         self.writer.add_summary(summary, step)
