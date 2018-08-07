@@ -107,6 +107,78 @@ class TwoDScaler(BaseEstimator, TransformerMixin):
         return norm
 
 
+class TwoDFreqScaler(BaseEstimator, TransformerMixin):
+    """
+        Zero mean and unit variance scaler
+    """
+
+    def __init__(self):
+        pass
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, x):
+        mean = np.mean(x, axis=2, keepdims=True)
+        std = np.std(x, axis=2, keepdims=True)
+        norm = (x - mean) / (std + 1e-10)
+        return norm
+
+
+class TwoDFreqSubjScaler(BaseEstimator, TransformerMixin):
+    """
+        Zero mean and unit variance scaler
+    """
+
+    def __init__(self):
+        pass
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, x):
+        mean = np.mean(x, axis=(0, 2), keepdims=True)
+        std = np.std(x, axis=(0, 2), keepdims=True)
+        norm = (x - mean) / (std + 1e-10)
+        return norm
+
+
+class TwoDTimeSubjScaler(BaseEstimator, TransformerMixin):
+    """
+        Zero mean and unit variance scaler
+    """
+
+    def __init__(self):
+        pass
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, x):
+        mean = np.mean(x, axis=(0, 3), keepdims=True)
+        std = np.std(x, axis=(0, 3), keepdims=True)
+        norm = (x - mean) / (std + 1e-10)
+        return norm
+
+
+class TwoDTimeScaler(BaseEstimator, TransformerMixin):
+    """
+        Zero mean and unit variance scaler
+    """
+
+    def __init__(self):
+        pass
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, x):
+        mean = np.mean(x, axis=3, keepdims=True)
+        std = np.std(x, axis=3, keepdims=True)
+        norm = (x - mean) / (std + 1e-10)
+        return norm
+
+
 class Resample(BaseEstimator, TransformerMixin):
     """
         Zero mean and unit variance scaler
