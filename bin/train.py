@@ -6,15 +6,13 @@ import torch
 import numpy as np
 from cfg.config import ex
 from sacred.stflow import LogFileWriter
-from sleeplearning.lib.feature_extractor import FeatureExtractor
 from sleeplearning.lib.base import Base
 from sleeplearning.lib.logger import Logger
-import sleeplearning.lib.utils as utils
 import json
 
 
 @ex.main
-def train(ds, arch, ms, cuda, log_dir, seed, save_best_model,_run):
+def train(ds, arch, ms, cuda, log_dir, seed, save_model, save_best_only,_run):
     # fix seed
     print("seed: ", seed)
     np.random.seed(seed)
@@ -48,8 +46,8 @@ def train(ds, arch, ms, cuda, log_dir, seed, save_best_model,_run):
 
     _run.info['modelstr'] = str(clf.model)
 
-    if save_best_model:
-        clf.save_checkpoint_()
+    if save_model:
+        clf.save_checkpoint_(save_best_only=save_best_only)
 
     return clf.best_acc_
 

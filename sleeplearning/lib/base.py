@@ -29,11 +29,12 @@ class Base(object):
         self.verbose = verbose
         self.tenacity = 10000
         self.best_acc_ = None
+        self.best: dict = None
         self.last_acc = None
 
         if self.cudaEfficient:
             self.remap_storage = lambda storage, loc: storage.cuda(0)
-            self.kwargs = {'num_workers': 1, 'pin_memory': True}
+            self.kwargs = {'num_workers': 4, 'pin_memory': False}
         else:
             # remap storage to CPU (needed for model load if no GPU avail.)
             self.remap_storage = lambda storage, loc: storage
@@ -46,7 +47,7 @@ class Base(object):
 
         ldr = utils.get_loader(loader)
 
-        print("\nTRAINING SET: ")
+        print("\nTRAINING SET: ", end="")
         train_ds = utils.SleepLearningDataset(data_dir, train_csv, fold,
                                               nclasses,
                                               FeatureExtractor(
@@ -54,7 +55,7 @@ class Base(object):
                                               nbrs,
                                               ldr, verbose=self.verbose)
 
-        print("\nVAL SET: ")
+        print("\nVAL SET: ", end="")
         val_ds = utils.SleepLearningDataset(data_dir, val_csv, fold,
                                             nclasses,
                                             FeatureExtractor(
@@ -64,11 +65,11 @@ class Base(object):
 
         print("\nTRAIN LOADER:")
         train_loader = utils.get_sampler(train_ds, batch_size_train,
-                                         oversample, True, self.cudaEfficient,
+                                         oversample, True, self.kwargs,
                                          verbose=True)
         print("\nVAL LOADER:")
         val_loader = utils.get_sampler(val_ds, batch_size_val,
-                                       False, False, self.cudaEfficient,
+                                       False, False, self.kwargs,
                                        verbose=True)
 
         # save parameters for model reloading
@@ -106,7 +107,9 @@ class Base(object):
         # Training loop
         self.nepoch = 1
         bestmodel = copy.deepcopy(self.model)
+        bestopt = copy.deepcopy(self.optimizer)
         bestaccuracy = -1
+        bestepoch = -1
         stop_train = False
         early_stop_count = 0
         self.tenacity = 15
@@ -154,6 +157,8 @@ class Base(object):
             if self.last_acc > bestaccuracy:
                 bestaccuracy = self.last_acc
                 bestmodel = copy.deepcopy(self.model)
+                bestopt = copy.deepcopy(self.optimizer)
+                bestepoch = self.nepoch
             elif early_stop:
                 if early_stop_count >= self.tenacity:
                     stop_train = True
@@ -161,12 +166,15 @@ class Base(object):
 
             self.nepoch += 1
 
-        self.model = bestmodel
-        self.last_acc = bestaccuracy
-
+        self.best = {
+            'model': bestmodel,
+            'optimizer': bestopt,
+            'accuracy': bestaccuracy,
+            'epoch': bestepoch
+        }
         self.best_acc_ = bestaccuracy
 
-    def score(self, subject_path):
+    def score(self, subject_path, probs=False):
         import tempfile
         top1 = AverageMeter()
         subject_path = os.path.normpath(os.path.abspath(subject_path))
@@ -177,24 +185,29 @@ class Base(object):
         test_loader = self.get_loader_from_csv_(data_dir, tmp_csv, 0, 100,
                                                 False)
 
-        predictions = np.array([], dtype=int)
+        predictions = None
         targets = np.array([], dtype=int)
         self.model.eval()
         with torch.no_grad():
             for data, target in test_loader:
                 if self.cudaEfficient:
                     data, target = data.cuda(), target.cuda()
-                data, target = Variable(data).float(), Variable(
-                    target).long()
                 # compute output
                 output = self.model(data)
-                (prec1,), prediction = self.accuracy_(output, target,
+
+                (prec1,), pred = self.accuracy_(output, target,
                                              topk=(1,))
-
-                predictions = np.append(predictions, prediction)
-                targets = np.append(targets, target.data.cpu().numpy())
+                pred = pred.data.cpu().numpy()
                 top1.update(prec1, data.size(0))
+                targets = np.append(targets, target.data.cpu().numpy())
 
+                if probs:
+                    pred = F.softmax(output, dim=1).data.cpu().numpy()
+
+                if predictions is None:
+                    predictions = pred
+                else:
+                    predictions = np.append(predictions, pred, axis=0)
         return top1.avg, predictions, targets
 
     def predict(self, subject_path):
@@ -207,31 +220,39 @@ class Base(object):
         test_loader = self.get_loader_from_csv_(data_dir, tmp_csv, 0, 100,
                                                 False)
         self.model.eval()
-        prediction = np.array([])
+        prediction = None
         with torch.no_grad():
             for data, target in test_loader:
                 if self.cudaEfficient:
                     data, target = data.cuda(), target.cuda()
-                data, target = Variable(data).float(), Variable(
-                    target).long()
                 # compute output
                 output = self.model(data)
                 _, pred = output.topk(1, 1, True, True)
                 prediction = np.append(prediction, pred.data.cpu().numpy())
         return prediction.astype(int)
 
-    def predict_proba(self, devX):
-        # TODO: fix dummy implementation
+    def predict_proba(self, subject_path):
+        import tempfile
+        subject_path = os.path.normpath(os.path.abspath(subject_path))
+        data_dir, subject_name = os.path.split(subject_path)
+        temp_path = tempfile.mkdtemp()
+        tmp_csv = os.path.join(temp_path, 'tmp_csv')
+        np.savetxt(tmp_csv, np.array([subject_name]), delimiter=",", fmt='%s')
+        test_loader = self.get_loader_from_csv_(data_dir, tmp_csv, 0, 100,
+                                                False)
         self.model.eval()
-        probas = []
+        probas = None
         with torch.no_grad():
-            for i in range(0, len(devX), self.batch_size):
-                Xbatch = Variable(devX[i:i + self.batch_size], volatile=True)
-                vals = F.softmax(self.model(Xbatch).data.cpu().numpy())
-                if not probas:
+            for data, target in test_loader:
+                if self.cudaEfficient:
+                    data, target = data.cuda(), target.cuda()
+                # compute output
+                output = self.model(data)
+                vals = F.softmax(output, dim=1).data.numpy()
+                if probas is None:
                     probas = vals
                 else:
-                    probas = np.concatenate(probas, vals, axis=0)
+                    probas = np.append(probas, vals, axis=0)
         return probas
 
     def restore(self, checkpoint_dir):
@@ -275,11 +296,13 @@ class Base(object):
         for batch_idx, (data, target) in enumerate(train_loader):
             if self.cudaEfficient:
                 data, target = data.cuda(), target.cuda()
-            data, target = Variable(data).float(), Variable(target).long()
 
             # compute output
             output = self.model(data)
             loss = self.criterion(output, target)
+            # for granger loss set output to y_att (for class argmax)
+            if isinstance(output, tuple):
+                output = output[2]
 
             # measure accuracy and record loss
             (prec1, prec2), prediction = self.accuracy_(output, target,
@@ -327,7 +350,6 @@ class Base(object):
             for batch_idx, (data, target) in enumerate(val_loader):
                 if self.cudaEfficient:
                     data, target = data.cuda(), target.cuda()
-                data, target = Variable(data).float(), Variable(target).long()
 
                 # compute output
                 output = self.model(data)
@@ -387,31 +409,44 @@ class Base(object):
                                              verbose=self.verbose)
 
         data_loader = utils.get_sampler(dataset, batch_size, False, shuffle,
-                                        self.cudaEfficient,
+                                        self.kwargs,
                                         verbose=self.verbose)
         return data_loader
 
-    def save_checkpoint_(self):
-        state = {
-            'epoch': self.nepoch,
-            'arch': self.arch,
-            'ms': self.ms,
-            'modelstr': str(self.model),
-            'ds': self.ds,
-            'state_dict': self.model.state_dict(),
-            'last_acc': self.last_acc,
-            'best_acc': self.best_acc_,
-            'optimizer': self.optimizer.state_dict() if self.optimizer else
-            None,
-        }
-
-        if self.last_acc >= self.best_acc_:
+    def save_checkpoint_(self, save_best_only: bool = False):
+        if save_best_only:
+            state = {
+                'epoch': self.best['epoch'],
+                'arch': self.arch,
+                'ms': self.ms,
+                'modelstr': str(self.best['model']),
+                'ds': self.ds,
+                'state_dict': self.best['model'].state_dict(),
+                'last_acc': self.best['accuracy'],
+                'best_acc': self.best['accuracy'],
+                'optimizer': self.best['optimizer'].state_dict() if self.best[
+                    'optimizer']
+                else
+                None,
+            }
             best_name = os.path.join(self.logger.log_dir, 'model_best.pth.tar')
             torch.save(state, best_name)
             if self.logger._run is not None:
                 self.logger._run.add_artifact(best_name)
         else:
-            filename = os.path.join(dir, 'checkpoint.pth.tar')
+            filename = os.path.join(self.logger.log_dir, 'checkpoint.pth.tar')
+            state = {
+                'epoch': self.nepoch,
+                'arch': self.arch,
+                'ms': self.ms,
+                'modelstr': str(self.model),
+                'ds': self.ds,
+                'state_dict': self.model.state_dict(),
+                'last_acc': self.last_acc,
+                'best_acc': self.best_acc_,
+                'optimizer': self.optimizer.state_dict() if self.optimizer
+                else None,
+            }
             torch.save(state, filename)
             if self.logger._run is not None:
                 self.logger._run.add_artifact(filename)
