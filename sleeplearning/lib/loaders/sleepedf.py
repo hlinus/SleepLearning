@@ -41,9 +41,11 @@ class Sleepedf(BaseLoader):
     """
     Loader for https://www.physionet.org/physiobank/database/sleep-edfx/ files.
     """
-    def __init__(self, path: str, epoch_length: int = 30):
+    def __init__(self, path: str, epoch_length: int = 30, verbose=False):
         super().__init__(path, epoch_length)
         filename_base = os.path.basename(path)
+        if filename_base.endswith("-PSG"):
+            filename_base = filename_base[:-4]
         psg_file = path + '.edf'
         ann_file = glob.glob(os.path.join(os.path.dirname(path),filename_base.split('-')[0][:-2]+'*Hypnogram.edf'))[0]
         select_ch = 'EEG Fpz-Cz'
