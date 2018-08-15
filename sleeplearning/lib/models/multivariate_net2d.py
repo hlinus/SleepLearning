@@ -17,7 +17,7 @@ class Conv2dWithBn(nn.Module):
         # fake 'SAME'
         self.relu = nn.ReLU()
         self.conv1_bn = nn.BatchNorm2d(n_filters)
-        # self.weights_init()
+        #self.weights_init()
 
     def weights_init(m):
         for _, mi in m._modules.items():
@@ -113,4 +113,5 @@ class MultivariateNet2d(nn.Module):
         x = self.Dropout(x)
         for i in range(len(self.fcn)):
             x = self.fcn[i](x)
-        return x
+        output = {'logits': x}
+        return output

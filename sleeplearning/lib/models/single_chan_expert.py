@@ -92,8 +92,9 @@ class SingleChanExpert(nn.Module):
                     xavier_normal(mi.bias.data)
 
     def forward(self, x):
-        x = self.conv_block(x)
-        x = self.Dropout(x)
-        x = self.fcn(x)
-        x = self.last_fc(x)
-        return x
+        y = self.conv_block(x)
+        y = self.Dropout(y)
+        y = self.fcn(y)
+        y = self.last_fc(y)
+        output = {'logits': y}
+        return output

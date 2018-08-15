@@ -4,15 +4,16 @@ import shutil
 import time
 import copy
 import torch
-from torch.autograd import Variable
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from typing import List, Tuple
+from typing import List, Tuple, Dict
+
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 from sleeplearning.lib.feature_extractor import *
 from sleeplearning.lib.utils import AverageMeter
 import sleeplearning.lib.utils as utils
+from sleeplearning.lib.granger_loss import GrangerLoss
 
 
 class Base(object):
@@ -113,39 +114,26 @@ class Base(object):
         stop_train = False
         early_stop_count = 0
         self.tenacity = 15
+
         while not stop_train and self.nepoch <= ms['epochs']:
-            tr_loss, tr_acc, tr_tar, tr_pred = self.trainepoch_(train_loader,
-                                                                self.nepoch)
-            val_loss, self.last_acc, val_tar, val_pred = self.valepoch_(
+            tr_metrics, tr_tar, tr_pred = self.trainepoch_(train_loader,
+                                                           self.nepoch)
+            val_metrics, val_tar, val_pred = self.valepoch_(
                 val_loader)
 
             # log accuracy and confusion matrix
             if self.logger is not None:
-                self.logger.scalar_summary('acc/train', tr_acc, self.nepoch)
-                self.logger.scalar_summary('loss/train', tr_loss,
-                                           self.nepoch)
-                self.logger.scalar_summary('acc/val', self.last_acc,
-                                           self.nepoch)
-                self.logger.scalar_summary('loss/val', val_loss, self.nepoch)
-                np.savez(
-                    os.path.join(self.logger.log_dir, 'pred_train_last.npz'),
-                    predictions=np.array(tr_pred), targets=np.array(tr_tar),
-                    acc=tr_acc, epoch=self.nepoch)
-                np.savez(
-                    os.path.join(self.logger.log_dir, 'pred_val_last.npz'),
-                    predictions=np.array(val_pred), targets=np.array(
-                        val_tar), acc=self.last_acc, epoch=self.nepoch)
+                for tag, val in tr_metrics.items():
+                    if val is not None:
+                        self.logger.scalar_summary(tag+'/train', val.avg,
+                                                   self.nepoch)
 
+                for tag, val in val_metrics.items():
+                    if val is not None:
+                        self.logger.scalar_summary(tag+'/val', val.avg,
+                                                   self.nepoch)
+                self.last_acc = val_metrics['top1'].avg
                 if self.last_acc > bestaccuracy:
-                    shutil.copyfile(
-                        os.path.join(self.logger.log_dir,
-                                     'pred_train_last.npz'),
-                        os.path.join(self.logger.log_dir,
-                                     'pred_train_best.npz'))
-                    shutil.copyfile(
-                        os.path.join(self.logger.log_dir, 'pred_val_last.npz'),
-                        os.path.join(self.logger.log_dir, 'pred_val_best.npz'))
-
                     self.logger.cm_summary(tr_pred, tr_tar, 'cm/train',
                                            self.nepoch,
                                            ['W', 'N1', 'N2', 'N3', 'REM'])
@@ -174,9 +162,9 @@ class Base(object):
         }
         self.best_acc_ = bestaccuracy
 
-    def score(self, subject_path, probs=False):
+    def score(self, subject_path, probs=False) -> Tuple[float, np.ndarray,
+                                                        np.ndarray]:
         import tempfile
-        top1 = AverageMeter()
         subject_path = os.path.normpath(os.path.abspath(subject_path))
         data_dir, subject_name = os.path.split(subject_path)
         temp_path = tempfile.mkdtemp()
@@ -184,31 +172,28 @@ class Base(object):
         np.savetxt(tmp_csv, np.array([subject_name]), delimiter=",", fmt='%s')
         test_loader = self.get_loader_from_csv_(data_dir, tmp_csv, 0, 100,
                                                 False)
-
-        predictions = None
-        targets = np.array([], dtype=int)
+        output: dict = None
+        metrics: dict = None
         self.model.eval()
         with torch.no_grad():
             for data, target in test_loader:
                 if self.cudaEfficient:
                     data, target = data.cuda(), target.cuda()
                 # compute output
-                output = self.model(data)
+                batch_out, loss, metrics = self.predict_batch_(data, target,
+                                                               metrics)
+                if output is None:
+                    output = {'y_true': [], 'y_probs': [], 'y_pred': []}
+                output['y_probs'].append(F.softmax(batch_out['logits'], dim=1)
+                                         .data.cpu().numpy())
+                output['y_true'].append(target.data.cpu().numpy())
+                output['y_pred'].append(batch_out['y_pred'])
+        for k, v in output.items():
+            output[k] = np.concatenate(output[k], axis=0)
 
-                (prec1,), pred = self.accuracy_(output, target,
-                                             topk=(1,))
-                pred = pred.data.cpu().numpy()
-                top1.update(prec1, data.size(0))
-                targets = np.append(targets, target.data.cpu().numpy())
-
-                if probs:
-                    pred = F.softmax(output, dim=1).data.cpu().numpy()
-
-                if predictions is None:
-                    predictions = pred
-                else:
-                    predictions = np.append(predictions, pred, axis=0)
-        return top1.avg, predictions, targets
+        y_pred = output['y_probs'] if probs else output['y_pred']
+        y_true = output['y_true']
+        return metrics['top1'], y_pred, y_true
 
     def predict(self, subject_path):
         import tempfile
@@ -283,64 +268,51 @@ class Base(object):
             print("=> loaded model (epoch {}), Prec@1: {}"
                   .format(self.nepoch, self.best_acc_))
 
-    def trainepoch_(self, train_loader: DataLoader, epoch):
+    def trainepoch_(self,
+                    tr_loader: DataLoader,
+                    epoch: int) -> Tuple[dict, np.ndarray, np.ndarray]:
         self.model.train()
         batch_time = AverageMeter()
-        losses = AverageMeter()
-        top1 = AverageMeter()
-        top2 = AverageMeter()
-        predictions = np.array([], dtype=int)
-        targets = np.array([], dtype=int)
+        metrics: dict = None
+        predictions: np.array = np.array([], dtype=int)
+        targets: np.array = np.array([], dtype=int)
 
         end = time.time()
-        for batch_idx, (data, target) in enumerate(train_loader):
+        for batch_idx, (data, target) in enumerate(tr_loader):
             if self.cudaEfficient:
                 data, target = data.cuda(), target.cuda()
 
             # compute output
-            output = self.model(data)
-            loss = self.criterion(output, target)
-            # for granger loss set output to y_att (for class argmax)
-            if isinstance(output, tuple):
-                output = output[2]
+            output, batchloss, metrics = self.predict_batch_(data, target,
+                                                                metrics)
 
-            # measure accuracy and record loss
-            (prec1, prec2), prediction = self.accuracy_(output, target,
-                                                        topk=(1, 2))
-
-            predictions = np.append(predictions, prediction)
+            predictions = np.append(predictions, output['y_pred'])
             targets = np.append(targets, target.data.cpu().numpy())
-
-            losses.update(loss.item(), data.size(0))
-            top1.update(prec1, data.size(0))
-            top2.update(prec2, data.size(0))
 
             # compute gradient and do Adam step if model has any trainable
             # parameters (not just averaging trained experts)
             if self.optimizer:
                 self.optimizer.zero_grad()
-                loss.backward()
+                batchloss.backward()
                 self.optimizer.step()
 
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
 
-        print('Train: [{0}]x[{1}/{1}]\t'
-              'Time {batch_time.sum:.1f}\t'
-              'Loss {loss.avg:.2f}\t'
-              'Prec@1 {top1.avg:.2f}\t'
-              'Prec@2 {top2.avg:.2f}'.format(epoch, len(train_loader),
-                                             batch_time=batch_time,
-                                             loss=losses, top1=top1, top2=top2))
-        return losses.avg, top1.avg, targets, predictions
+        print(f'Train: [{self.nepoch}]x[{len(tr_loader)}/{len(tr_loader)}]\t'
+              f'Time {batch_time.sum:.1f}\t'
+              f'Loss {metrics["loss"].avg:.2f}\t'
+              f'Prec@1 {metrics["top1"].avg:.2f}\t'
+              f'Prec@2 {metrics["top2"].avg:.2f}')
 
-    def valepoch_(self, val_loader: DataLoader) -> Tuple[float, float, np.array,
-                                                         np.array]:
+        return metrics, targets, predictions
+
+    def valepoch_(self, val_loader: DataLoader) -> Tuple[dict,
+                                                         np.ndarray,
+                                                         np.ndarray]:
         batch_time = AverageMeter()
-        losses = AverageMeter()
-        top1 = AverageMeter()
-        top2 = AverageMeter()
+        metrics: dict = None
         self.model.eval()
 
         end = time.time()
@@ -352,31 +324,49 @@ class Base(object):
                     data, target = data.cuda(), target.cuda()
 
                 # compute output
-                output = self.model(data)
-                loss = self.criterion(output, target)
+                output, _, metrics = self.predict_batch_(data, target, metrics)
 
-                # measure accuracy and record loss
-                (prec1, prec2), prediction = self.accuracy_(output, target,
-                                                            topk=(1, 2))
-                predictions = np.append(predictions, prediction)
+                predictions = np.append(predictions, output['y_pred'])
                 targets = np.append(targets, target.data.cpu().numpy())
-                losses.update(loss.item(), data.size(0))
-                top1.update(prec1, data.size(0))
-                top2.update(prec2, data.size(0))
 
                 # measure elapsed time
                 batch_time.update(time.time() - end)
                 end = time.time()
 
-        print('Val:  [{0}/{0}]\t\t'
-              'Time {batch_time.sum:.1f}\t'
-              'Loss {loss.avg:.2f}\t'
-              'Prec@1 {top1.avg:.2f}\t'
-              'Prec@2 {top2.avg:.2f}'.format(
-            len(val_loader), batch_time=batch_time,
-            loss=losses, top1=top1, top2=top2))
+        print(f'Val: [{self.nepoch}]x[{len(val_loader)}/{len(val_loader)}]\t'
+              f'Time {batch_time.sum:.1f}\t'
+              f'Loss {metrics["loss"].avg:.2f}\t'
+              f'Prec@1 {metrics["top1"].avg:.2f}\t'
+              f'Prec@2 {metrics["top2"].avg:.2f}')
 
-        return losses.avg, top1.avg, targets, predictions
+        return metrics, targets, predictions
+
+    def predict_batch_(self,
+                       data,
+                       target,
+                       metrics: dict = None) -> Tuple[Dict, torch.Tensor, Dict]:
+        batchout = self.model(data)
+        batchloss = self.criterion(batchout['logits'], target)
+
+        if metrics is None:
+            metrics: dict = {'loss': AverageMeter(), 'top1': AverageMeter(),
+                             'top2': AverageMeter()}
+
+        # for granger loss ignore aux predictors after loss comp
+        if isinstance(self.criterion, GrangerLoss):
+            for k, v in batchloss.items():
+                metrics[k].update(v.item(), data.size(0))
+        else:
+            metrics['loss'].update(batchloss.item(), data.size(0))
+
+        # measure accuracy
+        (prec1, prec2), y_pred = self.accuracy_(
+            batchout['logits'], target, topk=(1, 2))
+        batchout['y_pred'] = y_pred
+        metrics['top1'].update(prec1, data.size(0))
+        metrics['top2'].update(prec2, data.size(0))
+
+        return batchout, batchloss, metrics
 
     @staticmethod
     def accuracy_(output, target, topk=(1,)) -> Tuple[
