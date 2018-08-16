@@ -32,7 +32,7 @@ def cfg():
         'train_csv': None,
         'val_csv': None,
         'batch_size_train': 32,
-        'batch_size_val': 256,
+        'batch_size_val': 128,
         'loader': 'Physionet18',
         'nbrs': 2,
         'fold': None,  # only specify for CV
@@ -53,6 +53,19 @@ def multvarnet():
         'weighted_loss': True
     }
 
+
+@ex.named_config
+def Mode():
+    arch = 'Mode'
+
+    ms = {
+        'epochs': 100,
+        'dropout': .5,
+        'optim': 'adam,lr=0.000005',
+        'expert_ids': list(range(1452, 1459)),
+        'train_emb': True,
+        'weighted_loss': True
+    }
 
 @ex.named_config
 def trainedExpAtt():
@@ -98,6 +111,22 @@ def GrangerAmoe():
         # 'input_dim': None,  # will be set automatically
         'weighted_loss': True,
         'loss': 'granger'
+    }
+
+
+@ex.named_config
+def SimpleAmoe():
+    arch = 'SimpleAmoe'
+
+    ms = {
+        'epochs': 15,
+        'dropout': .5,
+        'optim': 'adam,lr=0.000005',
+        'sum_exp': False,
+        # 'xavier_init': True,
+        'expert_ids': list(range(1242, 1249)),
+        # 'input_dim': None,  # will be set automatically
+        'weighted_loss': True,
     }
 
 @ex.named_config
@@ -156,7 +185,24 @@ def exp_avg():
 @ex.named_config
 def ALL_CHAN_2D():
     ds = {
+
         'channels': [
+            ('C3-M2', [
+                'Resample(epoch_len=30, fs=100)',
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]
+             ),
+            ('C4-M1', [
+                'Resample(epoch_len=30, fs=100)',
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]
+             ),
             ('E1-M2', [
                 'Resample(epoch_len=30, fs=100)',
                 'BandPass(fs=100, lowpass=45, highpass=.5)',
@@ -164,55 +210,39 @@ def ALL_CHAN_2D():
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]
-            ),
-             ('F4-M1', [
-                 'Resample(epoch_len=30, fs=100)',
-                 'BandPass(fs=100, lowpass=45, highpass=.5)',
-                 'Spectrogram(fs=100, window=150, stride=100)',
-                 'LogTransform()',
-                 'TwoDFreqSubjScaler()'
-             ]
-              ),
-             ('C3-M2', [
+             ),
+            ('F3-M2', [
                 'Resample(epoch_len=30, fs=100)',
                 'BandPass(fs=100, lowpass=45, highpass=.5)',
                 'Spectrogram(fs=100, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
-             ]
-              ),
-             ('C4-M1', [
+            ]
+             ),
+            ('F4-M1', [
                 'Resample(epoch_len=30, fs=100)',
                 'BandPass(fs=100, lowpass=45, highpass=.5)',
                 'Spectrogram(fs=100, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
-             ]
-              ),
-             ('O2-M1', [
+            ]
+             ),
+            ('O1-M2', [
                 'Resample(epoch_len=30, fs=100)',
                 'BandPass(fs=100, lowpass=45, highpass=.5)',
                 'Spectrogram(fs=100, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
-             ]
-              ),
-             ('F3-M2', [
+            ]
+             ),
+            ('O2-M1', [
                 'Resample(epoch_len=30, fs=100)',
                 'BandPass(fs=100, lowpass=45, highpass=.5)',
                 'Spectrogram(fs=100, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
-             ]
-              ),
-             ('O1-M2', [
-                'Resample(epoch_len=30, fs=100)',
-                'BandPass(fs=100, lowpass=45, highpass=.5)',
-                'Spectrogram(fs=100, window=150, stride=100)',
-                'LogTransform()',
-                'TwoDFreqSubjScaler()'
-             ]
-              ),
+            ]
+             ),
              ]
     }
 
