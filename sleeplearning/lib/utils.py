@@ -16,7 +16,7 @@ import re
 import numpy as np
 from torch import optim
 from torch.utils.data import DataLoader
-from typing import List
+from typing import List, Tuple, Dict
 from torch.utils.data.sampler import WeightedRandomSampler, RandomSampler, \
     SequentialSampler
 from sleeplearning.lib.loaders.baseloader import BaseLoader
@@ -171,6 +171,45 @@ def get_sampler(ds: SleepLearningDataset,
     return dataloader
 
 
+def get_model_output(clf, data_dir, subject) -> Tuple[Dict, Dict]:
+    import tempfile
+    subject_path = os.path.join(data_dir, subject)
+    subject_path = os.path.normpath(os.path.abspath(subject_path))
+    data_dir, subject = os.path.split(subject_path)
+    temp_path = tempfile.mkdtemp()
+    tmp_csv = os.path.join(temp_path, 'tmp_csv')
+    np.savetxt(tmp_csv, np.array([subject]), delimiter=",", fmt='%s')
+    test_loader = clf.get_loader_from_csv_(data_dir, tmp_csv, 0, 100,
+                                            False)
+    output: dict = None
+    metrics: dict = None
+    clf.model.eval()
+    with torch.no_grad():
+        for data, target in test_loader:
+            if clf.cudaEfficient:
+                data, target = data.cuda(), target.cuda()
+            # compute output
+            batch_out, loss, metrics = clf.predict_batch_(data, target,
+                                                           metrics)
+            if output is None:
+                output = {'y_true': [], 'y_probs': []}
+                for k in batch_out.keys():
+                    output[k] = []
+
+            for k, v in batch_out.items():
+                output[k].append(v.data.cpu().numpy())
+            output['y_probs'].append(F.softmax(batch_out['logits'], dim=1)
+                                     .data.cpu().numpy())
+            output['y_true'].append(target.data.cpu().numpy())
+    for k, v in output.items():
+        output[k] = np.concatenate(output[k], axis=0)
+
+    if hasattr(clf.model, 'expert_channels'):
+        output['expert_channels'] = clf.model.expert_channels
+
+    return output, metrics
+
+
 def get_loader(s):
     ind = [i for i in range(len(s)) if str.isupper(s[i])]
     module_name = ''.join(
@@ -209,7 +248,7 @@ def get_model(arch, ms, class_dist=None, cuda=True, verbose=False):
     if 'loss' not in ms.keys() or ms['loss'] == 'xentropy':
         criterion = torch.nn.CrossEntropyLoss(weight=weights)
     elif ms['loss'] == 'granger':
-        criterion = GrangerLoss(weights=weights, alpha=.5)
+        criterion = GrangerLoss(weights=weights, alpha=1)
     else:
         raise ValueError(f"loss {ms['loss']} unknown. Please choose "
                          f"'xentropy' or 'granger'.")
