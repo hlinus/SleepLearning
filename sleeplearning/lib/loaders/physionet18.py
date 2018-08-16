@@ -28,6 +28,8 @@ class Physionet18(BaseLoader):
         # filter sleep stages (discard arousal annotations)
         sleep_stages = [x for x in list(zip(annotations, annotation_times)) if x[0] in ['W', 'N1', 'N2', 'N3', 'R']]
         annotations, annotation_times = [np.array(t) for t in zip(*sleep_stages)]
+        # Make sure all sleep phase annotations are a multiple of EPOCH_TIME
+        assert(np.all(annotation_times % EPOCH_TIME == 0))
         sleep_stage_durations = (annotation_times[1:]-annotation_times[:-1]) // self.sampling_rate_ // EPOCH_TIME
         num_labels = (annotation_times[-1]-annotation_times[0]) // self.sampling_rate_ // EPOCH_TIME
         # remove last sleep phase since we don't know when it ends
