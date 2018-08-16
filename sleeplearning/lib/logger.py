@@ -2,10 +2,11 @@ import tensorflow as tf
 import numpy as np
 import scipy.misc
 import itertools
-import tfplot
-from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 import matplotlib
 matplotlib.use("Agg")
+import tfplot
+from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
+
 import matplotlib.pyplot as plt
 from sleeplearning.lib.loaders.baseloader import BaseLoader
 
@@ -16,13 +17,14 @@ except ImportError:
 
 
 def cm_figure_(prediction, truth, classes):
+    classes = classes.copy()
     cm = confusion_matrix(truth, prediction, labels=range(len(classes)))
     num_classes = cm.shape[0]
     per_class_metrics = np.array(
         precision_recall_fscore_support(truth, prediction, beta=1.0,
                                         labels=range(
                                             len(classes)))).T.round(2)
-    cm_norm = cm.astype('float') * 1 / cm.sum(axis=1)[:, np.newaxis]
+    cm_norm = cm.astype('float') * 1 / (cm.sum(axis=1)[:, np.newaxis]+1e-7)
     cm_norm = np.nan_to_num(cm_norm, copy=True)
 
     fig = plt.figure(figsize=(3, 2), dpi=320, facecolor='w',
@@ -56,7 +58,7 @@ def cm_figure_(prediction, truth, classes):
         ax.text(j, i, val if j != cm.shape[1] + 3 else int(val),
                 horizontalalignment="center", fontsize=2,
                 verticalalignment='center', color="black")
-    fig.set_tight_layout(True)
+    #fig.set_tight_layout(True)
     return fig
 
 
