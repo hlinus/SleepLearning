@@ -1,14 +1,8 @@
 import shutil
-import sys
 import os
-
 import h5py as h5py
 import torch
-
 from sleeplearning.lib.granger_loss import GrangerLoss
-
-root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
-sys.path.insert(0, root_dir)
 import inspect
 import time
 import pandas as pd
@@ -59,22 +53,28 @@ class SleepLearningDataset(object):
         class_distribution = np.zeros(
             len(BaseLoader.sleep_stages_labels.keys()), dtype=int)
         #subject_labels = []
+
         for subject_file in subject_files:
             start = time.time()
             subject = loader(os.path.join(data_dir, subject_file))
             subject_labels.append(subject.label)
             psgs_reshaped = {}
+            num_epochs = len(subject.hypnogram)
+            artefact_mask = np.zeros(num_epochs, dtype=bool)
             for k, psgs in subject.psgs.items():
                 psgs1 = psgs.reshape(
                     (-1, subject.sampling_rate_ * subject.epoch_length))
                 psgs_reshaped[k] = psgs1
+                whole_epoch_zero = np.logical_and(psgs1.min(axis=1)==0, psgs1.max(axis=1)==0)
+                artefact_mask = np.logical_or(artefact_mask,whole_epoch_zero)
+            subject.hypnogram[artefact_mask] = 6
             # if spectogram used:
             # [num_epochs X num_channels X freq_domain X time_domain]
             # else
             # [num_epochs X num_channels X time_domain]
             feature_matrix = feature_extractor.fit_transform(psgs_reshaped)
             del psgs_reshaped
-            num_epochs = feature_matrix.shape[0]
+            #num_epochs = feature_matrix.shape[0]
 
             if neighbors > 0:
                 # pad with zeros before and after (additional '#neighbors' epochs)
@@ -91,11 +91,12 @@ class SleepLearningDataset(object):
                     feature_matrix[i - neighbors // 2:i + neighbors // 2 + 1],
                     axis=concat_axis) for i
                     in range(neighbors // 2, num_epochs + neighbors // 2)])
-
+            num_artifacts = 0
             for e, (sample, label_int) in enumerate(
                     zip(feature_matrix, subject.hypnogram)):
                 label = BaseLoader.sleep_stages_labels[label_int]
                 if discard_arts and label == 'Artifact':
+                    num_artifacts+=1
                     continue
                 class_distribution[label_int] += 1
                 id = subject.label + '_epoch_' + '{0:0>5}'.format(
@@ -112,8 +113,8 @@ class SleepLearningDataset(object):
                     hf.create_dataset("y", data=sample['y'])
                 self.X.append(filename)
             if verbose:
-                print('loaded {} [{:.2f}s]'.format(subject_file,
-                                                   time.time()-start))
+                print(f'loaded {subject_file} [{(time.time()-start):.2f}s,'
+                      f' {num_artifacts} artifacts removed]')
 
         self.dataset_info = {}
         class_distribution_dict = {}
@@ -249,6 +250,8 @@ def get_model(arch, ms, class_dist=None, cuda=True, verbose=False):
         criterion = torch.nn.CrossEntropyLoss(weight=weights)
     elif ms['loss'] == 'granger':
         criterion = GrangerLoss(weights=weights, alpha=1)
+    elif ms['loss'] == 'nlle':
+        criterion = torch.nn.NLLLoss(weight=weights)
     else:
         raise ValueError(f"loss {ms['loss']} unknown. Please choose "
                          f"'xentropy' or 'granger'.")
