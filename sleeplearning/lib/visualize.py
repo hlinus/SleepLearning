@@ -5,6 +5,14 @@ import numpy as np
 import itertools
 
 
+def compute_transition_matrix_(data):
+    M = np.zeros((7, 7))
+    for sl in data:
+        for i, j in zip(sl.hypnogram, sl.hypnogram[1:]):
+            M[i, j] += 1
+    return M
+
+
 class Visualize(object):
     "Class to visualize psg data of a list of sleeplearning objects"
 
@@ -32,22 +40,21 @@ class Visualize(object):
 
     def transition_distribution(self):
         num_sleep_phases = len(BaseLoader.sleep_stages_labels.keys())
-        M = np.zeros((num_sleep_phases, num_sleep_phases))
-        for sl in self.data:
-            for i, j in zip(sl.hypnogram, sl.hypnogram[1:]):
-                M[i, j] += 1
+        M = compute_transition_matrix_(self.data).astype(int)
         cmap = plt.cm.Blues
-        M /= (0.0001 + np.sum(M, axis=1)[:, np.newaxis])
-        plt.figure()
-        plt.imshow(M, interpolation='nearest', cmap=cmap)
+        M_norm = M / (0.0001 + np.sum(M, axis=1)[:, np.newaxis])
+        plt.figure(figsize=(10,10))
+        plt.imshow(M_norm, interpolation='nearest', cmap=cmap)
         tick_marks = np.arange(num_sleep_phases)
         plt.yticks(tick_marks, BaseLoader.sleep_stages_labels.values())
         plt.xticks(tick_marks, BaseLoader.sleep_stages_labels.values())
+        plt.ylabel('FROM')
+        plt.xlabel('TO')
         plt.title("Transition probabilities")
         for i, j in itertools.product(range(M.shape[0]), range(M.shape[1])):
-            plt.text(j, i, '{:.2f}'.format(M[i, j]),
-                     horizontalalignment="center",
-                     color="black")
+            plt.text(j, i, '{}\n({:.2f})'.format(M[i, j], M_norm[i, j]),
+                    horizontalalignment="center", fontsize=12,
+                    verticalalignment='center', color="black")
 
     def psd(self, channel: str, sleep_phases: List[int]):
         plt.figure(figsize=(10, 5))
@@ -89,9 +96,10 @@ class Visualize(object):
             f.suptitle('[' + sl.label + '] - epoch ' + str(
                 epoch_index) + ' - sleep phase: [' + sleep_phase + ']',
                        fontsize=16)
-            t = 20 * np.arange(5000, dtype=float) / 5000
-            # t+=offset/30
+
             samples_per_epoch = sl.sampling_rate_ * sl.epoch_length
+            t = sl.epoch_length * np.arange(samples_per_epoch, dtype=float) / samples_per_epoch
+            # t+=offset/30
             psg = sl.psgs[channel][epoch_index * samples_per_epoch:
                                     (epoch_index + 1) * samples_per_epoch]
             axarr[0].plot(t, psg)
