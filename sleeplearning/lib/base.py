@@ -7,13 +7,14 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from typing import List, Tuple, Dict
-
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 from sleeplearning.lib.feature_extractor import *
-from sleeplearning.lib.utils import AverageMeter
-import sleeplearning.lib.utils as utils
-from sleeplearning.lib.granger_loss import GrangerLoss
+#from sleeplearning.lib.utils import utils
+from sleeplearning.lib import utils
+import numpy as np
+#from sleeplearning.lib.granger_loss import GrangerLoss
+#from sleeplearning.lib.transforms import SensorDropout
 
 
 class Base(object):
@@ -24,11 +25,12 @@ class Base(object):
         self.arch = None
         self.ms = None
         self.ds = None
+        self.fold = None
         self.logger = logger
         self.nepoch = -1
         self.cudaEfficient = cuda
         self.verbose = verbose
-        self.tenacity = 10000
+        self.tenacity = 5
         self.best_acc_ = None
         self.best: dict = None
         self.last_acc = None
@@ -48,13 +50,17 @@ class Base(object):
 
         ldr = utils.get_loader(loader)
 
+        sensor_dropout = None #SensorDropout((.5,.5,.5,.5))
+
         print("\nTRAINING SET: ", end="")
         train_ds = utils.SleepLearningDataset(data_dir, train_csv, fold,
                                               nclasses,
                                               FeatureExtractor(
                                                   channels).get_features(),
                                               nbrs,
-                                              ldr, verbose=self.verbose)
+                                              ldr, discard_arts=True,
+                                              transform=sensor_dropout,
+                                              verbose=self.verbose)
 
         print("\nVAL SET: ", end="")
         val_ds = utils.SleepLearningDataset(data_dir, val_csv, fold,
@@ -62,7 +68,8 @@ class Base(object):
                                             FeatureExtractor(
                                                 channels).get_features(),
                                             nbrs,
-                                            ldr, verbose=self.verbose)
+                                            ldr,
+                                            verbose=self.verbose)
 
         print("\nTRAIN LOADER:")
         train_loader = utils.get_sampler(train_ds, batch_size_train,
@@ -78,6 +85,7 @@ class Base(object):
         ms['nclasses'] = nclasses
         self.arch = arch
         self.ms = ms
+        self.fold = fold
         self.ds = {
             'loader': loader,
             'channels': channels,
@@ -113,7 +121,7 @@ class Base(object):
         bestepoch = -1
         stop_train = False
         early_stop_count = 0
-        self.tenacity = 15
+        self.tenacity = 5
 
         while not stop_train and self.nepoch <= ms['epochs']:
             tr_metrics, tr_tar, tr_pred = self.trainepoch_(train_loader,
@@ -148,10 +156,11 @@ class Base(object):
                 bestopt = copy.deepcopy(self.optimizer)
                 bestepoch = self.nepoch
             elif early_stop:
+                early_stop_count += 1
+                print(f"Patience: {early_stop_count}")
                 if early_stop_count >= self.tenacity:
                     stop_train = True
-                early_stop_count += 1
-
+                    print("EARLY STOPPING!")
             self.nepoch += 1
 
         self.best = {
@@ -193,7 +202,7 @@ class Base(object):
 
         y_pred = output['y_probs'] if probs else output['y_pred']
         y_true = output['y_true']
-        return metrics['top1'], y_pred, y_true
+        return metrics['top1'].avg, y_pred, y_true
 
     def predict(self, subject_path):
         import tempfile
@@ -272,7 +281,7 @@ class Base(object):
                     tr_loader: DataLoader,
                     epoch: int) -> Tuple[dict, np.ndarray, np.ndarray]:
         self.model.train()
-        batch_time = AverageMeter()
+        batch_time = utils.AverageMeter()
         metrics: dict = None
         predictions: np.array = np.array([], dtype=int)
         targets: np.array = np.array([], dtype=int)
@@ -311,7 +320,7 @@ class Base(object):
     def valepoch_(self, val_loader: DataLoader) -> Tuple[dict,
                                                          np.ndarray,
                                                          np.ndarray]:
-        batch_time = AverageMeter()
+        batch_time = utils.AverageMeter()
         metrics: dict = None
         self.model.eval()
 
@@ -349,15 +358,15 @@ class Base(object):
         batchloss = self.criterion(batchout['logits'], target)
 
         if metrics is None:
-            metrics: dict = {'loss': AverageMeter(), 'top1': AverageMeter(),
-                             'top2': AverageMeter()}
+            metrics: dict = {'loss': utils.AverageMeter(), 'top1':
+                utils.AverageMeter(),'top2': utils.AverageMeter()}
 
         # for granger loss ignore aux predictors after loss comp
-        if isinstance(self.criterion, GrangerLoss):
-            for k, v in batchloss.items():
-                metrics[k].update(v.item(), data.size(0))
-        else:
-            metrics['loss'].update(batchloss.item(), data.size(0))
+        #if isinstance(self.criterion, GrangerLoss):
+        #    for k, v in batchloss.items():
+        #        metrics[k].update(v.item(), data.size(0))
+        #else:
+        metrics['loss'].update(batchloss.item(), data.size(0))
 
         # measure accuracy
         (prec1, prec2), y_pred = self.accuracy_(
@@ -411,6 +420,7 @@ class Base(object):
                 'ms': self.ms,
                 'modelstr': str(self.best['model']),
                 'ds': self.ds,
+                'fold': self.fold,
                 'state_dict': self.best['model'].state_dict(),
                 'last_acc': self.best['accuracy'],
                 'best_acc': self.best['accuracy'],
@@ -426,11 +436,12 @@ class Base(object):
         else:
             filename = os.path.join(self.logger.log_dir, 'checkpoint.pth.tar')
             state = {
-                'epoch': self.nepoch,
+                'epoch': self.nepoch-1,
                 'arch': self.arch,
                 'ms': self.ms,
                 'modelstr': str(self.model),
                 'ds': self.ds,
+                'fold': self.fold,
                 'state_dict': self.model.state_dict(),
                 'last_acc': self.last_acc,
                 'best_acc': self.best_acc_,
