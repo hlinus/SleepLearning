@@ -1,18 +1,13 @@
-import argparse
 import os
-import shutil
-
-import pandas as pd
 import sys
-
-from sacred.stflow import LogFileWriter
-from sklearn.metrics import accuracy_score, confusion_matrix
-
-from sleeplearning.lib.base import Base
-from sleeplearning.lib.logger import cm_figure_, Logger
-
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
+import shutil
+import pandas as pd
+from sacred.stflow import LogFileWriter
+from sklearn.metrics import accuracy_score, confusion_matrix
+from sleeplearning.lib.base import Base
+from sleeplearning.lib.logger import Logger
 from cfg.config import *
 import numpy as np
 parser = argparse.ArgumentParser(prog='Sleep Learning cross validation')
@@ -45,23 +40,25 @@ def cv(ds, arch, ms, cuda, log_dir, seed, _run):
     clf = Base(logger=logger, cuda=cuda, verbose=True)
 
     for i in range(20):
+        fold_accs = np.array([])
+        checkpoint_path = os.path.join(log_dir, f'fold{i}',
+                                       'checkpoint.pth.tar')
+        clf.restore(checkpoint_dir=checkpoint_path)
+        # reset fold id since we evaluate each subject independently
+        clf.ds['fold'] = 0
         subjects = pd.read_csv(ds['val_csv'], header=None)[i].dropna().tolist()
         for subject in subjects:
-            checkpoint_path = os.path.join(log_dir, f'fold{i}', 'checkpoint.pth.tar')
-            clf.restore(checkpoint_dir=checkpoint_path)
-            # TODO: fix hack for correct csv load
-            clf.ds['fold'] = 0
             acc, probs, true = clf.score(os.path.join(ds['data_dir'], subject),
                               probs=True)
             pred = np.argmax(probs, 1)
             savedict = dict(subject=subject, acc=acc, probs=probs, y_pred=pred,
                             y_true=true)
-
-
+            print(f"subject {subject}: {acc}")
+            fold_accs = np.append(fold_accs, acc)
             np.savez(os.path.join(output_dir, subject), **savedict)
             targets = np.append(targets, true)
             predictions = np.append(predictions, pred)
-
+        print(f"fold {i}: {np.mean(fold_accs)}")
     cm = confusion_matrix(targets, predictions)
     overall_acc = accuracy_score(targets, predictions)*100
     print("\n CONFUSION MATRIX ")
