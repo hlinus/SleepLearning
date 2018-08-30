@@ -3,11 +3,11 @@ import os
 import shutil
 import sys
 import glob
-import matplotlib
+import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 #
-from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
+from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, accuracy_score
 from matplotlib import gridspec
 
 CLASSES = ['W', 'N1', 'N2', 'N3', 'REM']
@@ -16,7 +16,8 @@ CLASSES = ['W', 'N1', 'N2', 'N3', 'REM']
 def get_basename_(path):
     return os.path.basename(os.path.normpath(path))
 
-def cm_figure_(prediction, truth, classes):
+
+def cm_figure_(prediction, truth, classes, configuration_name):
     classes = classes.copy()
     cm = confusion_matrix(truth, prediction, labels=range(len(classes)))
     num_classes = cm.shape[0]
@@ -37,34 +38,35 @@ def cm_figure_(prediction, truth, classes):
     xtick_marks = np.arange(len(classes))
     ytick_marks = np.arange(len(classes) - 4)
 
-    ax.set_xlabel('Predicted', fontsize=6, weight='bold')
+    ax.set_xlabel('Predicted', fontsize=4, weight='bold')
     ax.set_xticks(xtick_marks)
     c = ax.set_xticklabels(classes, fontsize=4, ha='center')
-    ax.xaxis.set_label_position('top')
-    ax.xaxis.tick_top()
-    ax.set_ylabel('True Label', fontsize=6, weight='bold')
+    #ax.xaxis.set_label_position('top')
+    #ax.xaxis.tick_top()
+    ax.set_ylabel('True Label', fontsize=4, weight='bold')
     ax.set_yticks(ytick_marks)
     ax.set_yticklabels(classes[:-4], fontsize=4, va='center')
     ax.yaxis.set_label_position('left')
     ax.yaxis.tick_left()
+    ax.set_title(configuration_name, fontsize=4, horizontalalignment='center')
 
     for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
         ax.text(j, i, '{}\n({:.2f})'.format(cm[i, j], cm_norm[i, j]),
-                horizontalalignment="center", fontsize=2,
+                horizontalalignment="center", fontsize=4,
                 verticalalignment='center', color="black")
     for i, j in itertools.product(range(cm.shape[0]),
                                   range(cm.shape[1], cm.shape[1] + 4)):
         val = per_class_metrics[i, j - num_classes]
         ax.text(j, i, val if j != cm.shape[1] + 3 else int(val),
-                horizontalalignment="center", fontsize=2,
+                horizontalalignment="center", fontsize=4,
                 verticalalignment='center', color="black")
 
-    plt.subplots_adjust(bottom=0.1, right=0.8, top=0.7)
     return fig
+
 
 def table_plot_(table, subjects, models):
     num_subjects = len(subjects)
-    model_names = [get_basename_(f) for f in models]
+    model_names = [m.name + '-' + r.name for m in models for r in m.configs]
 
     aggs = np.stack([np.mean(table, 0), np.std(table, 0)], axis=0)
 
@@ -105,30 +107,118 @@ def table_plot_(table, subjects, models):
     return fig
 
 
+class Model(object):
+    def __init__(self, path):
+        self.name = get_basename_(path)
+        print(f"model {self.name}")
+        self.configs = [Configurations(p) for p in sorted(glob.glob(path + '/*'))]
+
+
+class Runs(object):
+    def __init__(self, path):
+        self.name = get_basename_(path)
+        print(f"runs: {self.name}")
+        self.path = path
+        self.subjects = sorted(glob.glob(path + '/*'))
+
+
+class Configurations(object):
+    def __init__(self, path):
+        self.name = get_basename_(path)
+        self.path = path
+        print(f"config: {self.name}")
+        self.runs = [Runs(p) for p in sorted(glob.glob(path + '/*'))]
+
+
 class Evaluation(object):
     def __init__(self, path):
-        self.models = sorted(glob.glob(path + '/*'))
-        self.path = path
+        self.models = [Model(p) for p in sorted(glob.glob(path + '/*'))]
 
     def cm(self):
-        subjects = sorted(glob.glob(self.models[0] + '/*'))
-        subjects = [get_basename_(f) for f in subjects]
-
         for i, model in enumerate(self.models):
-            truth = []
-            prediction = []
-            for subject in subjects:
-                path = os.path.join(model, subject)
-                result = self.read_subject_file(path)
-                truth.append(result['y_true'])
-                prediction.append(result['y_pred'])
-            truth = list(itertools.chain.from_iterable(truth))
-            prediction = list(itertools.chain.from_iterable(prediction))
-            fig = cm_figure_(prediction, truth, CLASSES)
-            fig.suptitle(get_basename_(model))
+            #models.append(model.name)
+            runs = []
+            row = []
+            for config in model.configs:
+                runs.append(config.name)
+                truth = []
+                prediction = []
+                run = config.runs[0]
+                for path in run.subjects:
+                    result = self.read_subject_file(path)
+                    truth.append(result['y_true'])
+                    prediction.append(result['y_pred'])
+                truth = list(itertools.chain.from_iterable(truth))
+                prediction = list(itertools.chain.from_iterable(prediction))
+                fig = cm_figure_(prediction, truth, CLASSES, config.name)
+                fig.suptitle(get_basename_(model.name), fontsize=5,)
+                #plt.tight_layout()
+
+    def bar(self):
+        models = []
+        means = []
+        stds = []
+        for i, model in enumerate(self.models):
+            models.append(model.name)
+            runs = []
+            model_mean = []
+            model_std = []
+            for config in model.configs:
+                runs.append(config.name)
+                accs = np.array([])
+                for j, run in enumerate(config.runs):
+                    truth = []
+                    prediction = []
+                    #print("run: ", run.name)
+                    for path in run.subjects:
+                        result = self.read_subject_file(path)
+                        truth.append(result['y_true'])
+                        prediction.append(result['y_pred'])
+                    #print("truth: ", len(truth))
+                    truth = list(itertools.chain.from_iterable(truth))
+                    prediction = list(itertools.chain.from_iterable(prediction))
+                    accs = np.append(accs, accuracy_score(truth, prediction))
+                model_mean.append(np.mean(accs))
+                model_std.append(np.std(accs))
+
+            means.append(model_mean)
+            stds.append(model_std)
+
+        fig = plt.figure()
+        ax = plt.subplot(111)
+        groups = np.vstack(means).T
+        x = range(len(groups))
+        list_rects = list()
+        models = [m.name for m in self.models]
+        configs = [c.name for c in self.models[0].configs]
+
+        for idx, (mean, std) in enumerate(zip(means, stds)):
+            factor = 0 if len(models) == 1 else 0.2
+            left = [i + idx * factor for i in x]
+
+            rects = ax.bar(left, mean,
+                            width=0.2,
+                            #color=colors[idx],
+                            yerr=std, ecolor='k', capsize=5,
+                            orientation='vertical', label=models[idx])
+
+        list_rects.append(rects)
+
+        # set xtick labels
+        list_ticklabel = configs
+        ax.set_xticks([i + 1*factor/len(models) for i in x])
+        ax.set_xticklabels(list_ticklabel)
+        ax.legend()
+
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1),
+                   fancybox=True, shadow=True, ncol=5)
+        ax.set_axisbelow(True)
+        ax.yaxis.grid(color='gray', linestyle='dashed')
+        ax.set_ylim(ymin=0, ymax=1)
+        ax.set_ylabel('accuracy')
 
     def hypnogram(self, index=0):
-        subjects = sorted(glob.glob(self.models[0] + '/*'))
+        subjects = sorted(glob.glob(self.models[0][0] + '/*'))
         subject = [get_basename_(f) for f in subjects][index]
 
         f, axarr = plt.subplots(len(self.models), 1, squeeze=False,
@@ -162,18 +252,17 @@ class Evaluation(object):
                 ax2.set_ylim(0, 1)
 
     def table(self):
-        subjects = sorted(glob.glob(self.models[0] + '/*'))
-        subjects = [get_basename_(f) for f in subjects]
-
         table = []
-        for subject in subjects:
-            row = []
-            for i, model in enumerate(self.models):
-                path = os.path.join(model, subject)
-                result = self.read_subject_file(path)
-                row.append(result['acc'])
-            table.append(row)
-        table = np.stack(table)
+        for i, model in enumerate(self.models):
+            for config in model.configs:
+                column = []
+                run = config.runs[0]
+                for path in run.subjects:
+                    result = self.read_subject_file(path)
+                    column.append(result['acc'])
+                table.append(column)
+        table = np.vstack(table).T
+        subjects = [get_basename_(p) for p in run.subjects]
         table_plot_(table, subjects, self.models)
 
     def att_table(self):
@@ -278,13 +367,17 @@ class Evaluation(object):
                         'acc': get_acc(ubound_vote, result['y_true'])}
             np.savez(savepath, **savedict)
 
-
     def read_subject_file(self, path):
         file = np.load(path)
         truth = file['truth'] if 'truth' in file.keys() else file[
             'y_true']
         pred = file['pred'] if 'pred' in file.keys() else file['y_pred']
-        acc = float(file['acc'])
+        t = file['acc']
+        #print(t)
+        #print(type(t))
+        #print(AverageMeter(t))
+        #print("avg: ", t.avg)
+        acc = float(t)
 
         result = {'y_true': truth, 'y_pred': pred, 'acc': acc}
         if 'probs' in file.keys():
