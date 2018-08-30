@@ -1,20 +1,25 @@
 import shutil
 import os
+
+import gridfs
 import h5py as h5py
 import torch
-from sleeplearning.lib.granger_loss import GrangerLoss
 import inspect
 import time
 import pandas as pd
 import re
 import numpy as np
+from pymongo import MongoClient
 from torch import optim
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
 from typing import List, Tuple, Dict
 from torch.utils.data.sampler import WeightedRandomSampler, RandomSampler, \
     SequentialSampler
+
+from cfg.config import mongo_url
 from sleeplearning.lib.loaders.baseloader import BaseLoader
-from sleeplearning.lib.feature_extractor import FeatureExtractor
+from sleeplearning.lib.granger_loss import GrangerLoss
 from sleeplearning.lib.models import *
 from sleeplearning.lib.loaders import *
 
@@ -127,9 +132,6 @@ class SleepLearningDataset(object):
         self.dataset_info['input_shape'] = feature_matrix[0].shape
 
     def __getitem__(self, index):
-        #file = np.load(self.X[index])
-        # x = file['x']
-        # y_ = file['y']
         with h5py.File(self.X[index], "r") as hf:
             x = hf["x"].value
             y_ = hf["y"].value
@@ -137,12 +139,31 @@ class SleepLearningDataset(object):
         if self.transform is not None:
             x = self.transform(x)
         x = torch.from_numpy(x).float()
-        #y_ = torch.from_numpy(y_).long()
 
         return x, y_
 
     def __len__(self):
         return len(self.X)
+
+
+def restore_model_from_mongodb(model_id: int, best: bool):
+    client = MongoClient(mongo_url)
+    db = client.sacred
+    files = db.fs.files
+    fs = gridfs.GridFS(db)
+    filename = 'model_best.pth.tar' if best else 'checkpoint.pth.tar'
+    model_object = files.find_one({"filename": "artifact://runs/"+str(
+        model_id)+"/"+filename})
+    model_path = os.path.abspath(os.path.join(os.path.dirname('__file__'),
+                                            'models'))
+    if model_object is None:
+        raise ValueError("model does not exist")
+    myfile = fs.get(model_object['_id'])
+
+    model_path = os.path.join(model_path,
+                              str(model_id)+'_'+filename)
+    with open(model_path, 'wb') as f:
+        f.write(myfile.read())
 
 
 def get_sampler(ds: SleepLearningDataset,
