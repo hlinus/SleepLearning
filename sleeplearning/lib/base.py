@@ -114,7 +114,7 @@ class Base(object):
         print("\n\n")
 
         # Training loop
-        self.nepoch = 1
+        self.nepoch = 0
         bestmodel = copy.deepcopy(self.model)
         bestopt = copy.deepcopy(self.optimizer)
         bestaccuracy = -1
@@ -124,6 +124,7 @@ class Base(object):
         self.tenacity = 5
 
         while not stop_train and self.nepoch <= ms['epochs']:
+            self.nepoch += 1
             tr_metrics, tr_tar, tr_pred = self.trainepoch_(train_loader,
                                                            self.nepoch)
             val_metrics, val_tar, val_pred = self.valepoch_(
@@ -161,7 +162,6 @@ class Base(object):
                 if early_stop_count >= self.tenacity:
                     stop_train = True
                     print("EARLY STOPPING!")
-            self.nepoch += 1
 
         self.best = {
             'model': bestmodel,
@@ -413,30 +413,29 @@ class Base(object):
         return data_loader
 
     def save_checkpoint_(self, save_best_only: bool = False):
-        if save_best_only:
-            state = {
-                'epoch': self.best['epoch'],
-                'arch': self.arch,
-                'ms': self.ms,
-                'modelstr': str(self.best['model']),
-                'ds': self.ds,
-                'fold': self.fold,
-                'state_dict': self.best['model'].state_dict(),
-                'last_acc': self.best['accuracy'],
-                'best_acc': self.best['accuracy'],
-                'optimizer': self.best['optimizer'].state_dict() if self.best[
-                    'optimizer']
-                else
-                None,
-            }
-            best_name = os.path.join(self.logger.log_dir, 'model_best.pth.tar')
-            torch.save(state, best_name)
-            if self.logger._run is not None:
-                self.logger._run.add_artifact(best_name)
-        else:
+        state = {
+            'epoch': self.best['epoch'],
+            'arch': self.arch,
+            'ms': self.ms,
+            'modelstr': str(self.best['model']),
+            'ds': self.ds,
+            'fold': self.fold,
+            'state_dict': self.best['model'].state_dict(),
+            'last_acc': self.best['accuracy'],
+            'best_acc': self.best['accuracy'],
+            'optimizer': self.best['optimizer'].state_dict() if self.best[
+                'optimizer'] else None
+        }
+
+        best_name = os.path.join(self.logger.log_dir, 'model_best.pth.tar')
+        torch.save(state, best_name)
+        if self.logger._run is not None:
+            self.logger._run.add_artifact(best_name)
+
+        if not save_best_only:
             filename = os.path.join(self.logger.log_dir, 'checkpoint.pth.tar')
             state = {
-                'epoch': self.nepoch-1,
+                'epoch': self.nepoch,
                 'arch': self.arch,
                 'ms': self.ms,
                 'modelstr': str(self.model),
