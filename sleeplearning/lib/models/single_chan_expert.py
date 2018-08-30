@@ -3,8 +3,6 @@ import torch.nn.functional as F
 from torch import nn
 from torch.nn import ModuleList
 from torch.nn.init import xavier_normal_ as xavier_normal
-from sleeplearning.lib.models.deep_sleep_net import DeepFeatureNet_, \
-    Conv1dWithBn
 
 
 class Conv2dWithBn(nn.Module):
@@ -37,19 +35,20 @@ class ConvBlock(nn.Module):
     def __init__(self, input_shape):
         super(ConvBlock, self).__init__()
         self.input_shape = input_shape
+        neighbors = input_shape[2] // 30 -1
         self.block = nn.Sequential(
-                nn.MaxPool2d((2, 1), stride=(2, 1)),
-                Conv2dWithBn(1, filter_size=(3, 3), n_filters=128, stride=1),
-                nn.MaxPool2d((2, self.input_shape[2]//150+1), stride=(2,
-                                                                      self.input_shape[2]//150+1)),
+                nn.MaxPool2d((2, 2), stride=(2, 2)),
+                Conv2dWithBn(1, filter_size=(3, 3), n_filters=64, stride=1),
+                nn.MaxPool2d((2, 2), stride=(2, 2)),
 
-                Conv2dWithBn(128, filter_size=(3, 3), n_filters=64, stride=1),
-                nn.MaxPool2d((2, self.input_shape[2]//210+1), stride=(2, self.input_shape[2]//210+1)),
+                Conv2dWithBn(64, filter_size=(3, 3), n_filters=64, stride=1),
+                nn.MaxPool2d((3, 3), stride=(3, 3)),
 
-                Conv2dWithBn(64, filter_size=(3, 3), n_filters=12, stride=1),
-                nn.MaxPool2d((2, self.input_shape[2]//300+2),
-                             stride=(2, self.input_shape[2]//300+2)),
+                Conv2dWithBn(64, filter_size=(3, 3), n_filters=96, stride=1),
+                nn.MaxPool2d((3, 3), stride=(3, 3)),
             )
+
+        outdim = _get_output_dim(self.block, input_shape)
 
     def forward(self, x):
         x = self.block(x)
@@ -67,29 +66,16 @@ class SingleChanExpert(nn.Module):
 
         self.Dropout = nn.Dropout(p=self.dropout)
 
-        in_dim = self._get_output_dim((1, *self.input_dim[1:])) * self.input_dim[0]
+        in_dim = _get_output_dim(self.conv_block, (1, *self.input_dim[
+                                                           1:])) * \
+                 self.input_dim[0]
         last_drop = 0
         self.fcn = nn.Sequential(
-            nn.Linear(in_dim, 128, bias=True)
+            nn.Linear(in_dim[1], 128, bias=True),
+             nn.ReLU(),
+             #nn.Dropout(p=self.dropout)
         )
         self.last_fc = nn.Linear(128, self.num_classes, bias=True)
-
-        #self.weights_init()
-
-    # generate input sample and forward to get shape
-    def _get_output_dim(self, shape):
-        bs = 1
-        input = torch.rand(bs, *shape)
-        output_feat = self.conv_block(input)
-        n_size = output_feat.data.view(bs, -1).size(1)
-        return n_size
-
-    def weights_init(m):
-        for _, mi in m._modules.items():
-            if isinstance(mi, nn.Conv2d) or isinstance(m, nn.Linear):
-                xavier_normal(mi.weight.data)
-                if mi.bias is not None:
-                    xavier_normal(mi.bias.data)
 
     def forward(self, x):
         y = self.conv_block(x)
@@ -98,3 +84,27 @@ class SingleChanExpert(nn.Module):
         y = self.last_fc(y)
         output = {'logits': y}
         return output
+
+
+# generate input sample and forward to get shape
+def _get_output_dim(net, shape):
+    bs = 1
+    input = torch.rand(bs, *shape)
+    output_feat = net(input)
+    #n_size = output_feat.data.view(bs, -1).size(1)
+    #return n_size
+    return output_feat.shape
+
+
+if __name__ == '__main__':
+    import torch
+    r = torch.rand(1, 1, 96, 9*30)
+
+    ts = {'input_dim': r.shape[1:], 'dropout': 0, 'nclasses': 5}
+    net = SingleChanExpert(ts)
+    nbr_trainable_params = sum(
+        p.numel() for p in net.parameters() if p.requires_grad)
+
+    print(net)
+    print("\n # OF TRAINABLE PARAMETERS:", nbr_trainable_params)
+    print(net(r))
