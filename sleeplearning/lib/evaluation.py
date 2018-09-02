@@ -9,12 +9,16 @@ import numpy as np
 #
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, accuracy_score
 from matplotlib import gridspec
-
+import seaborn as sns
 CLASSES = ['W', 'N1', 'N2', 'N3', 'REM']
 
 
 def get_basename_(path):
-    return os.path.basename(os.path.normpath(path))
+    name = os.path.basename(os.path.normpath(path))
+    # cut of number for ordering
+    if name[1] == '_':
+        name = name.split("_")[-1]
+    return name
 
 
 def cm_figure_(prediction, truth, classes, configuration_name):
@@ -154,10 +158,49 @@ class Evaluation(object):
                 fig.suptitle(get_basename_(model.name), fontsize=5,)
                 #plt.tight_layout()
 
+    def boxplot(self):
+        models = []
+        means = []
+        stds = []
+        rows = []
+        for i, model in enumerate(self.models):
+            models.append(model.name)
+            configs = []
+            model_mean = []
+            model_std = []
+            for config in model.configs:
+                configs.append(config.name)
+                accs = np.array([])
+                run = config.runs[0]
+                truth = []
+                prediction = []
+                # print("run: ", run.name)
+                for path in run.subjects:
+                    result = self.read_subject_file(path)
+                    acc = result['acc']/100
+                    rows.append([get_basename_(path), model.name, config.name,
+                               acc])
+
+        df = pd.DataFrame(rows, columns=['subject', 'model', 'config',
+                                         'accuracy'])
+
+        fig, ax = plt.subplots(figsize=(10,6))
+        ax.set_title("Subject-wise accuracy")
+        ax = sns.boxplot(x="config", y="accuracy", hue="model", data=df,
+                         #palette="Set3",
+                         order=[c.name for c in self.models[0].configs])
+        ax.set_xlabel("")
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1),
+                  fancybox=True, shadow=True, ncol=5)
+        ax.set_axisbelow(True)
+        ax.yaxis.grid(color='gray', linestyle='dashed')
+        ax.set_ylim(ymin=0, ymax=1)
+
     def bar(self):
         models = []
         means = []
         stds = []
+        rows = []
         for i, model in enumerate(self.models):
             models.append(model.name)
             runs = []
@@ -174,48 +217,34 @@ class Evaluation(object):
                         result = self.read_subject_file(path)
                         truth.append(result['y_true'])
                         prediction.append(result['y_pred'])
+
                     #print("truth: ", len(truth))
                     truth = list(itertools.chain.from_iterable(truth))
                     prediction = list(itertools.chain.from_iterable(prediction))
-                    accs = np.append(accs, accuracy_score(truth, prediction))
+                    acc = accuracy_score(truth, prediction)
+                    rows.append(
+                        [model.name, config.name, acc])
+                    accs = np.append(accs, acc)
                 model_mean.append(np.mean(accs))
                 model_std.append(np.std(accs))
 
             means.append(model_mean)
             stds.append(model_std)
 
-        fig = plt.figure()
-        ax = plt.subplot(111)
-        groups = np.vstack(means).T
-        x = range(len(groups))
-        list_rects = list()
-        models = [m.name for m in self.models]
-        configs = [c.name for c in self.models[0].configs]
-
-        for idx, (mean, std) in enumerate(zip(means, stds)):
-            factor = 0 if len(models) == 1 else 0.2
-            left = [i + idx * factor for i in x]
-
-            rects = ax.bar(left, mean,
-                            width=0.2,
-                            #color=colors[idx],
-                            yerr=std, ecolor='k', capsize=5,
-                            orientation='vertical', label=models[idx])
-
-        list_rects.append(rects)
-
-        # set xtick labels
-        list_ticklabel = configs
-        ax.set_xticks([i + 1*factor/len(models) for i in x])
-        ax.set_xticklabels(list_ticklabel)
-        ax.legend()
-
+        df = pd.DataFrame(rows, columns=['model', 'config',
+                                         'accuracy'])
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.set_title("Overall accuracy")
+        ax = sns.barplot(x="config", y="accuracy", hue="model", data=df,
+                         #palette="Set3",
+                         order=[c.name for c in self.models[0].configs])
+        ax.set_xlabel("")
         ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1),
-                   fancybox=True, shadow=True, ncol=5)
+                    fancybox=True, shadow=True, ncol=5)
         ax.set_axisbelow(True)
         ax.yaxis.grid(color='gray', linestyle='dashed')
         ax.set_ylim(ymin=0, ymax=1)
-        ax.set_ylabel('accuracy')
+        # ax.set_ylabel('accuracy')
 
     def hypnogram(self, index=0):
         subjects = sorted(glob.glob(self.models[0][0] + '/*'))
