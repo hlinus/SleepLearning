@@ -1,8 +1,15 @@
+import os
+import tempfile
 from typing import List
+
+from sleeplearning.lib import utils
+from sleeplearning.lib.feature_extractor import FeatureExtractor
 from sleeplearning.lib.loaders.baseloader import BaseLoader
 import matplotlib.pyplot as plt
 import numpy as np
 import itertools
+
+from sleeplearning.lib.loaders.physionet18 import Physionet18
 
 
 def compute_transition_matrix_(data):
@@ -37,6 +44,51 @@ class Visualize(object):
             "Sleep Phases Distribution ({0} labels)".format(str(total_labels)))
         _ = plt.xticks(np.arange(7),
                        list(BaseLoader.sleep_stages_labels.values()))
+
+    def feature_visualization(self):
+        subject_path = os.path.normpath(os.path.abspath(self.data[0].path))
+        data_dir, subject_name = os.path.split(subject_path)
+
+        temp_path = tempfile.mkdtemp()
+        tmp_csv = os.path.join(temp_path, 'tmp_csv')
+        subjects = [sub.label for sub in self.data]
+        np.savetxt(tmp_csv, np.array([subjects]), delimiter=",", fmt='%s')
+
+        channels = [
+            ('C4-M1', [
+                'ResamplePoly(epoch_len=30, fs=200)',
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram2(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                #'TwoDFreqSubjScaler()'
+                #'TwoDScaler()'
+            ]
+             )]
+        ldr = utils.get_loader('Physionet18')
+        ds = utils.SleepLearningDataset(data_dir, tmp_csv, 0,
+                                   5,
+                                   FeatureExtractor(
+                                       channels).get_features(),
+                                   4,
+                                   ldr, discard_arts=True,
+                                   transform=None,
+                                   verbose=False)
+
+        by_label = [[] for _ in range(7)]
+        for i, e in enumerate(ds):
+            r = e[1]
+            #r = np.random.choice(5)
+            by_label[r].append(e[0])
+            #if i==10: break
+
+        f, axarr = plt.subplots(1, 5, sharex=False, figsize=(20, 5))
+
+        for i, l in enumerate(by_label):
+            if l != []:
+                by_label[i] = np.mean(np.stack(l), axis=0).squeeze()
+                axarr[i].imshow(by_label[i], origin="lower", aspect="auto",
+                           cmap='jet', interpolation="none")
+
 
     def transition_distribution(self):
         num_sleep_phases = len(BaseLoader.sleep_stages_labels.keys())
@@ -110,9 +162,9 @@ class Visualize(object):
             stride = sl.sampling_rate_
             f, t, Sxx_list = sl.get_spectrograms(channel, window, stride)
             Sxx = Sxx_list[epoch_index]
-            Sxx = Sxx ** 2  # psd from magnitude spectrum
-            db = 10 * np.log10(Sxx)  # convert to dB
-            axarr[1].pcolormesh(t, f, db, cmap='jet', vmin=-15)
+            #Sxx = Sxx ** 2  # psd from magnitude spectrum
+            db = 20*np.log10(Sxx)+1
+            axarr[1].pcolormesh(t, f, db, cmap='jet', vmin=0, vmax=1)
             axarr[1].invert_yaxis()
             axarr[1].set_xlabel("time [s]")
             axarr[1].set_ylabel('frequency [Hz]')
@@ -173,3 +225,23 @@ class Visualize(object):
             cbar.ax.set_title('Power (dB)')
             # cbar.set_ticks([zmin, (zmax+zmin)/2, zmax])
             # cbar.set_ticklabels([zmin, (zmax+zmin)/2, zmax])
+
+
+if __name__ == '__main__':
+    subjects = []
+    M = np.zeros((7, 7))
+
+    import pandas as pd
+
+    files = pd.read_csv('../../cfg/physionet18/rs40_0.csv', header=None)[
+        0].dropna().tolist()
+    files = [os.path.join('/', 'cluster', 'scratch', 'hlinus',
+                          'physionet-challenge-train', f) for f in files]
+    for i, filename in enumerate(files):
+        print(filename)
+        s = Physionet18(filename, verbose=False)
+        M += compute_transition_matrix_([s])
+        subjects.append(s)
+        if i == 0: break
+    vsub = Visualize(subjects)
+    vsub.feature_visualzation()
