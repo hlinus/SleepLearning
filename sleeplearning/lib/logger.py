@@ -4,10 +4,10 @@ import scipy.misc
 import itertools
 import matplotlib
 matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+plt.switch_backend('agg')
 import tfplot
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
-
-import matplotlib.pyplot as plt
 from sleeplearning.lib.loaders.baseloader import BaseLoader
 
 try:
