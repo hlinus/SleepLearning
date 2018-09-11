@@ -1,8 +1,4 @@
 import numpy as np
-# fix bug: ImportError: libGL.so.1: cannot open shared object file: No such file or directory
-# details: https://github.com/conda-forge/pygridgen-feedstock/issues/10
-import matplotlib
-matplotlib.use("Agg")
 from wfdb import rdrecord
 from wfdb import rdann
 import os
