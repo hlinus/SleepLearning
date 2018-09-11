@@ -45,7 +45,7 @@ class Visualize(object):
         _ = plt.xticks(np.arange(7),
                        list(BaseLoader.sleep_stages_labels.values()))
 
-    def feature_visualization(self):
+    def feature_visualization(self, normalization = None, single_epoch=False):
         subject_path = os.path.normpath(os.path.abspath(self.data[0].path))
         data_dir, subject_name = os.path.split(subject_path)
 
@@ -54,16 +54,16 @@ class Visualize(object):
         subjects = [sub.label for sub in self.data]
         np.savetxt(tmp_csv, np.array([subjects]), delimiter=",", fmt='%s')
 
+        normalization = [normalization] if normalization else []
         channels = [
             ('C4-M1', [
-                'ResamplePoly(epoch_len=30, fs=200)',
+                'ResamplePoly2(epoch_len=30, fs=200, target_fs=100)',
                 'BandPass(fs=100, lowpass=45, highpass=.5)',
-                'Spectrogram2(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=100, window=150, stride=100)',
                 'LogTransform()',
-                #'TwoDFreqSubjScaler()'
-                #'TwoDScaler()'
-            ]
+            ] + normalization
              )]
+        # TODO: set loader depending on loaded subjects
         ldr = utils.get_loader('Physionet18')
         ds = utils.SleepLearningDataset(data_dir, tmp_csv, 0,
                                    5,
@@ -77,18 +77,24 @@ class Visualize(object):
         by_label = [[] for _ in range(7)]
         for i, e in enumerate(ds):
             r = e[1]
-            #r = np.random.choice(5)
             by_label[r].append(e[0])
-            #if i==10: break
 
-        f, axarr = plt.subplots(1, 5, sharex=False, figsize=(20, 5))
-
+        fig, axarr = plt.subplots(1, 5, sharex=True, sharey=True, figsize=(20,
+                                                                          5))
+        sleep_stages_labels = {0: 'W', 1: "N1", 2: 'N2', 3: 'N3', 4: 'R'}
+        window = 150
+        fs = 100
+        f = np.fft.rfftfreq(window, 1.0 / fs)
+        t = np.arange(-75, +75)
         for i, l in enumerate(by_label):
             if l != []:
+                if single_epoch: l = l[3]
                 by_label[i] = np.mean(np.stack(l), axis=0).squeeze()
-                axarr[i].imshow(by_label[i], origin="lower", aspect="auto",
-                           cmap='jet', interpolation="none")
-
+                pc = axarr[i].pcolormesh(t, f, by_label[i], cmap='jet',
+                                         vmin=-1, vmax=1)
+                axarr[i].set_xlabel("time [s]")
+                axarr[i].set_ylabel("frequeny [Hz]")
+                axarr[i].set_title(f'Stage {sleep_stages_labels[i]}')
 
     def transition_distribution(self):
         num_sleep_phases = len(BaseLoader.sleep_stages_labels.keys())
