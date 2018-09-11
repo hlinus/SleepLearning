@@ -16,7 +16,7 @@ CLASSES = ['W', 'N1', 'N2', 'N3', 'REM']
 def get_basename_(path):
     name = os.path.basename(os.path.normpath(path))
     # cut of number for ordering
-    if name[1] == '_':
+    if len(name)>1 and name[1] == '_':
         name = name.split("_")[-1]
     return name
 
@@ -171,6 +171,7 @@ class Evaluation(object):
             for config in model.configs:
                 configs.append(config.name)
                 accs = np.array([])
+                if len(config.runs) == 0: continue
                 run = config.runs[0]
                 truth = []
                 prediction = []
@@ -243,7 +244,7 @@ class Evaluation(object):
                     fancybox=True, shadow=True, ncol=5)
         ax.set_axisbelow(True)
         ax.yaxis.grid(color='gray', linestyle='dashed')
-        ax.set_ylim(ymin=0, ymax=1)
+        ax.set_ylim(ymin=0.4, ymax=1)
         # ax.set_ylabel('accuracy')
 
     def hypnogram(self, index=0):
