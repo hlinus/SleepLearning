@@ -195,9 +195,9 @@ class Evaluation(object):
                   fancybox=True, shadow=True, ncol=5)
         ax.set_axisbelow(True)
         ax.yaxis.grid(color='gray', linestyle='dashed')
-        ax.set_ylim(ymin=0, ymax=1)
+        ax.set_ylim(ymin=0.4, ymax=1)
 
-    def bar(self):
+    def bar(self, xlabel=None):
         models = []
         means = []
         stds = []
@@ -231,7 +231,7 @@ class Evaluation(object):
 
             means.append(model_mean)
             stds.append(model_std)
-
+        #print(means)
         df = pd.DataFrame(rows, columns=['model', 'config',
                                          'accuracy'])
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -239,7 +239,8 @@ class Evaluation(object):
         ax = sns.barplot(x="config", y="accuracy", hue="model", data=df,
                          #palette="Set3",
                          order=[c.name for c in self.models[0].configs])
-        ax.set_xlabel("")
+        if xlabel is not None:
+            ax.set_xlabel(xlabel)
         ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1),
                     fancybox=True, shadow=True, ncol=5)
         ax.set_axisbelow(True)
