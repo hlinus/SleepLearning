@@ -36,7 +36,7 @@ def cm_figure_(prediction, truth, classes, configuration_name):
                      edgecolor='k')
     ax = fig.add_subplot(1, 1, 1)
     im = ax.imshow(
-        np.concatenate((cm, np.zeros((len(classes), 4))), axis=1),
+        np.concatenate((cm_norm, np.zeros((len(classes), 4))), axis=1),
         cmap='Oranges')
     classes += ['PR', 'RE', 'F1', 'S']
     xtick_marks = np.arange(len(classes))
@@ -103,7 +103,7 @@ def table_plot_(table, subjects, models):
                  verticalalignment='center', color="black")
     xtick_marks = np.arange(len(model_names))
     ax2.set_xticks(xtick_marks)
-    ax2.set_xticklabels(model_names, rotation=45)
+    ax2.set_xticklabels(model_names, rotation=60)
 
     ytick_marks = np.arange(2)
     ax2.set_yticks(ytick_marks)
@@ -114,6 +114,7 @@ def table_plot_(table, subjects, models):
 class Model(object):
     def __init__(self, path):
         self.name = get_basename_(path)
+        self.path = path
         print(f"model {self.name}")
         self.configs = [Configurations(p) for p in sorted(glob.glob(path + '/*'))]
 
@@ -136,13 +137,12 @@ class Configurations(object):
 
 class Evaluation(object):
     def __init__(self, path):
+        self.path = path
         self.models = [Model(p) for p in sorted(glob.glob(path + '/*'))]
 
     def cm(self):
         for i, model in enumerate(self.models):
-            #models.append(model.name)
             runs = []
-            row = []
             for config in model.configs:
                 runs.append(config.name)
                 truth = []
@@ -160,22 +160,14 @@ class Evaluation(object):
 
     def boxplot(self):
         models = []
-        means = []
-        stds = []
         rows = []
         for i, model in enumerate(self.models):
             models.append(model.name)
             configs = []
-            model_mean = []
-            model_std = []
             for config in model.configs:
                 configs.append(config.name)
-                accs = np.array([])
                 if len(config.runs) == 0: continue
                 run = config.runs[0]
-                truth = []
-                prediction = []
-                # print("run: ", run.name)
                 for path in run.subjects:
                     result = self.read_subject_file(path)
                     acc = result['acc']/100
@@ -219,7 +211,6 @@ class Evaluation(object):
                         truth.append(result['y_true'])
                         prediction.append(result['y_pred'])
 
-                    #print("truth: ", len(truth))
                     truth = list(itertools.chain.from_iterable(truth))
                     prediction = list(itertools.chain.from_iterable(prediction))
                     acc = accuracy_score(truth, prediction)
@@ -231,7 +222,7 @@ class Evaluation(object):
 
             means.append(model_mean)
             stds.append(model_std)
-        #print(means)
+
         df = pd.DataFrame(rows, columns=['model', 'config',
                                          'accuracy'])
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -245,42 +236,41 @@ class Evaluation(object):
                     fancybox=True, shadow=True, ncol=5)
         ax.set_axisbelow(True)
         ax.yaxis.grid(color='gray', linestyle='dashed')
-        ax.set_ylim(ymin=0.4, ymax=1)
+        ax.set_ylim(ymin=0, ymax=1)
         # ax.set_ylabel('accuracy')
 
     def hypnogram(self, index=0):
-        subjects = sorted(glob.glob(self.models[0][0] + '/*'))
-        subject = [get_basename_(f) for f in subjects][index]
-
         f, axarr = plt.subplots(len(self.models), 1, squeeze=False,
                                 sharex=True, sharey=True,
-                                figsize=(15, 2.5*len(self.models)))
-        f.suptitle(subject)
-        #plt.suptitle("Hypnograms", fontsize=12)
+                                figsize=(15, 2.5 * len(self.models)))
         plt.yticks(range(5), ['W', 'N1', 'N2', 'N3', 'REM'])
         for i, model in enumerate(self.models):
-            path = os.path.join(model, subject)
-            result = self.read_subject_file(path)
-            axarr[i,0].plot(range(len(result['y_pred'])), result['y_pred'])
-            axarr[i, 0].plot(range(len(result['y_true'])), result[
-                'y_true'], alpha=0.3)
+            for config in model.configs:
+                run = config.runs[0]
+                path = run.subjects[index]
+                subject = get_basename_(path)
+                f.suptitle(subject)
 
-            wrong = np.argwhere(np.not_equal(result['y_true'], result[
-                'y_pred']))
-            axarr[i,0].plot(wrong, result['y_pred'][wrong], 'r.')
-            acc = result['acc']
-            axarr[i,0].set_title(f"{get_basename_(model)} "
-                                 f"[{acc:.2f}%]")
+                result = self.read_subject_file(path)
+                axarr[i, 0].plot(range(len(result['y_pred'])), result['y_pred'])
+                axarr[i, 0].plot(range(len(result['y_true'])), result[
+                    'y_true'], alpha=0.3)
 
-            if 'attention' in result.keys():
-                ax2 = axarr[i,0].twinx()
-                # same x-axis
-                color = 'tab:green'
-                ax2.set_ylabel('attention', color=color)
-                attention = result['attention']
-                ax2.plot(range(len(attention)), attention, color=color)
-                ax2.tick_params(axis='y', labelcolor=color)
-                ax2.set_ylim(0, 1)
+                wrong = np.argwhere(np.not_equal(result['y_true'], result[
+                    'y_pred']))
+                axarr[i, 0].plot(wrong, result['y_pred'][wrong], 'r.')
+                acc = result['acc']
+                axarr[i, 0].set_title(f"{model.name} "
+                                      f"[{acc:.2f}%]")
+                if 'attention' in result.keys():
+                    ax2 = axarr[i, 0].twinx()
+                    # same x-axis
+                    color = 'tab:green'
+                    ax2.set_ylabel('attention', color=color)
+                    attention = result['attention']
+                    ax2.plot(range(len(attention)), attention, color=color)
+                    ax2.tick_params(axis='y', labelcolor=color)
+                    ax2.set_ylim(0, 1)
 
     def table(self):
         table = []
@@ -297,49 +287,63 @@ class Evaluation(object):
         table_plot_(table, subjects, self.models)
 
     def att_table(self):
-        subjects = sorted(glob.glob(self.models[0] + '/*'))
-        subjects = [get_basename_(f) for f in subjects]
-        attention_models = []
+        att_models = []
         table = []
-        first = True
-        for subject in subjects:
-            row = []
-            for i, model in enumerate(self.models):
-                path = os.path.join(model, subject)
-                result = self.read_subject_file(path)
-                if not 'attention' in result.keys():
-                    continue
-                row.append(np.mean(result['attention']))
-                if first:
-                    attention_models.append(get_basename_(model))
-            table.append(row)
-            first = False
-        table = np.stack(table)
-        table_plot_(table, subjects, attention_models)
+        for i, model in enumerate(self.models):
+            for config in model.configs:
+                column = []
+                run = config.runs[0]
+                for path in run.subjects:
+                    result = self.read_subject_file(path)
+                    if not 'attention' in result.keys():
+                        continue
+                    column.append(np.mean(result['attention']))
+                if column != []:
+                    table.append(column)
+                    att_models.append(model)
+        table = np.vstack(table).T
+        subjects = [get_basename_(p) for p in run.subjects]
+        table_plot_(table, subjects, att_models)
 
     def extract_experts(self):
-        model = self.models[0]
-        subjects = sorted(glob.glob(self.models[0] + '/*'))
-        subjects = [get_basename_(f) for f in subjects]
-        experts = None
-        for subject in subjects:
-            path = os.path.join(model, subject)
-            result = self.read_subject_file(path)
-            if experts is None:
-                experts = result['expert_channels']
-                for expert in experts:
-                    os.makedirs(os.path.join(self.path, 'Expert-'+expert))
-            for i, expert in enumerate(experts):
-                y_expert_prob = result['y_experts'][:, i, :]
-                y_expert_pred = np.argmax(y_expert_prob, 1)
-                y_true = result['y_true']
-                a = result['a'][:, i]
-                wrong = np.argwhere(np.not_equal(y_true, y_expert_pred))
-                acc = 100*(1-wrong.shape[0]/len(y_expert_pred))
-                savepath = os.path.join(self.path, 'Expert-'+expert, subject)
-                savedict = {'y_true': y_true, 'y_pred': y_expert_pred,
-                            'acc': acc, 'attention': a}
-                np.savez(savepath, **savedict)
+        for i, model in enumerate(self.models):
+            configs = []
+            model_mean = []
+            model_std = []
+            for config in model.configs:
+                experts = None
+                configs.append(config.name)
+                accs = np.array([])
+                if len(config.runs) == 0: continue
+                run = config.runs[0]
+
+                # print("run: ", run.name)
+                for path in run.subjects:
+                    result = self.read_subject_file(path)
+                    subject = get_basename_(path)
+                    expert_base_path = os.path.join(self.path, os.path.basename(
+                        config.path))
+                    if experts is None:
+                        experts = result['expert_channels']
+                        for expert in experts:
+                            os.makedirs(
+                                os.path.join(self.path, 'Expert-' +
+                                             expert, os.path.basename(config.path), 'Expert-' +
+                                             expert))
+                    for i in range(result['y_experts'].shape[1]):
+                        y_expert_prob = result['y_experts'][:, i, :]
+                        y_expert_pred = np.argmax(y_expert_prob, 1)
+                        expert = result['expert_channels'][i]
+                        y_true = result['y_true']
+                        a = result['a'][:, i]
+                        wrong = np.argwhere(np.not_equal(y_true, y_expert_pred))
+                        acc = 100*(1-wrong.shape[0]/len(y_expert_pred))
+                        savepath = os.path.join(self.path, 'Expert-' +
+                                             expert, os.path.basename(config.path), 'Expert-' +
+                                             expert, subject)
+                        savedict = {'y_true': y_true, 'y_pred': y_expert_pred,
+                                    'acc': acc, 'attention': a}
+                        np.savez(savepath, **savedict)
 
     def extract_voters(self):
 
@@ -427,7 +431,8 @@ class Evaluation(object):
 
 
 if __name__ == '__main__':
-    e = Evaluation(sys.argv[1])
+    path = '/local/home/hlinus/Dev/SleepLearning/reports/results/Physionet18/Moe'
+    e = Evaluation(path)
     #e.table()
     #e.extract_voters()
     e.att_table()
