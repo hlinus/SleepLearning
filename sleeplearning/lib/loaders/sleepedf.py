@@ -46,12 +46,9 @@ class Sleepedf(BaseLoader):
     def __init__(self, path: str, epoch_length: int = 30, verbose=False):
         super().__init__(path, epoch_length)
         filename_base = os.path.basename(path)
-        if filename_base.endswith("-PSG"):
-            filename_base = filename_base[:-4]
         psg_file = path + '.edf'
         ann_file = glob.glob(os.path.join(os.path.dirname(path),filename_base.split('-')[0][:-2]+'*Hypnogram.edf'))[0]
-
-        self.label = filename_base.split('-')[0]
+        self.label = filename_base
         self.psgs = {}
         self.sampling_rate_ = 100
 
@@ -189,6 +186,7 @@ class Sleepedf(BaseLoader):
 
             self.psgs[select_ch.replace(" ", "-")] = x.reshape((-1))
             self.hypnogram = y
+            #break # only first channel
 
 
 #'''
