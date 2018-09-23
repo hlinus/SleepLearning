@@ -7,7 +7,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 #
-from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, accuracy_score
+from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, \
+    accuracy_score, cohen_kappa_score
+from sklearn.metrics import f1_score
 from matplotlib import gridspec
 import seaborn as sns
 CLASSES = ['W', 'N1', 'N2', 'N3', 'REM']
@@ -42,30 +44,151 @@ def cm_figure_(prediction, truth, classes, configuration_name):
     xtick_marks = np.arange(len(classes))
     ytick_marks = np.arange(len(classes) - 4)
 
-    ax.set_xlabel('Predicted', fontsize=4, weight='bold')
+    ax.set_xlabel('Predicted', fontsize=5, weight='bold')
     ax.set_xticks(xtick_marks)
-    c = ax.set_xticklabels(classes, fontsize=4, ha='center')
+    c = ax.set_xticklabels(classes, fontsize=5, ha='center')
     #ax.xaxis.set_label_position('top')
     #ax.xaxis.tick_top()
-    ax.set_ylabel('True Label', fontsize=4, weight='bold')
+    ax.set_ylabel('True Label', fontsize=5, weight='bold')
     ax.set_yticks(ytick_marks)
-    ax.set_yticklabels(classes[:-4], fontsize=4, va='center')
+    ax.set_yticklabels(classes[:-4], fontsize=5, va='center')
     ax.yaxis.set_label_position('left')
     ax.yaxis.tick_left()
-    ax.set_title(configuration_name, fontsize=4, horizontalalignment='center')
+    ax.set_title(configuration_name, fontsize=5, horizontalalignment='center')
 
     for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
         ax.text(j, i, '{}\n({:.2f})'.format(cm[i, j], cm_norm[i, j]),
-                horizontalalignment="center", fontsize=4,
+                horizontalalignment="center", fontsize=5,
                 verticalalignment='center', color="black")
     for i, j in itertools.product(range(cm.shape[0]),
                                   range(cm.shape[1], cm.shape[1] + 4)):
         val = per_class_metrics[i, j - num_classes]
         ax.text(j, i, val if j != cm.shape[1] + 3 else int(val),
-                horizontalalignment="center", fontsize=4,
+                horizontalalignment="center", fontsize=5,
                 verticalalignment='center', color="black")
 
     return fig
+
+
+def heatmap(data, row_labels, col_labels, ax=None,
+            cbar_kw={}, cbarlabel="", xlabel=None, ylabel=None, **kwargs):
+    """
+    Create a heatmap from a numpy array and two lists of labels.
+
+    Arguments:
+        data       : A 2D numpy array of shape (N,M)
+        row_labels : A list or array of length N with the labels
+                     for the rows
+        col_labels : A list or array of length M with the labels
+                     for the columns
+    Optional arguments:
+        ax         : A matplotlib.axes.Axes instance to which the heatmap
+                     is plotted. If not provided, use current axes or
+                     create a new one.
+        cbar_kw    : A dictionary with arguments to
+                     :meth:`matplotlib.Figure.colorbar`.
+        cbarlabel  : The label for the colorbar
+    All other arguments are directly passed on to the imshow call.
+    """
+
+    if not ax:
+        ax = plt.gca()
+
+    # Plot the heatmap
+    im = ax.imshow(data, **kwargs)
+
+    # Create colorbar
+    #cbar = ax.figure.colorbar(im, ax=ax, **cbar_kw)
+    #cbar.ax.set_ylabel(cbarlabel, rotation=-90, va="bottom")
+
+    # We want to show all ticks...
+    ax.set_xticks(np.arange(data.shape[1]))
+    ax.set_yticks(np.arange(data.shape[0]))
+    # ... and label them with the respective list entries.
+    ax.set_xticklabels(col_labels)
+    ax.set_yticklabels(row_labels)
+
+    if xlabel is not None:
+        ax.set_xlabel(xlabel)
+    if ylabel is not None:
+        ax.set_ylabel(ylabel)
+
+    # Let the horizontal axes labeling appear on top.
+    ax.tick_params(top=False, bottom=True,
+                   labeltop=False, labelbottom=True)
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=0, ha="center",
+             rotation_mode="anchor")
+
+    # Turn spines off and create white grid.
+    for edge, spine in ax.spines.items():
+        spine.set_visible(False)
+
+    ax.set_xticks(np.arange(data.shape[1]+1)-.5, minor=True)
+    ax.set_yticks(np.arange(data.shape[0]+1)-.5, minor=True)
+    ax.grid(which="minor", color="w", linestyle='-', linewidth=3)
+    ax.tick_params(which="minor", bottom=False, left=False)
+
+    return im
+
+
+def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
+                     textcolors=["black", "white"],
+                     threshold=None, **textkw):
+    """
+    A function to annotate a heatmap.
+
+    Arguments:
+        im         : The AxesImage to be labeled.
+    Optional arguments:
+        data       : Data used to annotate. If None, the image's data is used.
+        valfmt     : The format of the annotations inside the heatmap.
+                     This should either use the string format method, e.g.
+                     "$ {x:.2f}", or be a :class:`matplotlib.ticker.Formatter`.
+        textcolors : A list or array of two color specifications. The first is
+                     used for values below a threshold, the second for those
+                     above.
+        threshold  : Value in data units according to which the colors from
+                     textcolors are applied. If None (the default) uses the
+                     middle of the colormap as separation.
+
+    Further arguments are passed on to the created text labels.
+    """
+    import matplotlib
+    if not isinstance(data, (list, np.ndarray)):
+        data = im.get_array()
+
+    # Normalize the threshold to the images color range.
+    if threshold is not None:
+        threshold = im.norm(threshold)
+    else:
+        threshold = im.norm(data.max())/2.
+
+    # Set default alignment to center, but allow it to be
+    # overwritten by textkw.
+    kw = dict(horizontalalignment="center",
+              verticalalignment="center", fontsize=8)
+    kw.update(textkw)
+
+    # Get the formatter in case a string is supplied
+    if isinstance(valfmt, str):
+        valfmt = matplotlib.ticker.StrMethodFormatter(valfmt)
+
+    # Loop over the data and create a `Text` for each "pixel".
+    # Change the text's color depending on the data.
+    texts = []
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            if data[i, j] <=1:
+                kw.update(color=textcolors[im.norm(data[i, j]) > threshold])
+                text = im.axes.text(j, i, valfmt(data[i, j], None), **kw)
+            else:
+                text = im.axes.text(j, i, "{:d}".format(int(data[i, j]), None),
+                                    **kw)
+            texts.append(text)
+
+    return texts
 
 
 def table_plot_(table, subjects, models):
@@ -154,11 +277,49 @@ class Evaluation(object):
                     prediction.append(result['y_pred'])
                 truth = list(itertools.chain.from_iterable(truth))
                 prediction = list(itertools.chain.from_iterable(prediction))
-                fig = cm_figure_(prediction, truth, CLASSES, config.name)
-                fig.suptitle(get_basename_(model.name), fontsize=5,)
-                #plt.tight_layout()
+                cm = confusion_matrix(truth, prediction,
+                                      labels=range(5))
+                cm_norm = cm.astype('float') * 1 / (
+                            cm.sum(axis=1)[:, np.newaxis] + 1e-7)
+                cm_norm = np.nan_to_num(cm_norm, copy=True)
 
-    def boxplot(self):
+                fig, (ax1, ax2) = plt.subplots(2, 1,
+                                               figsize=(2.5,5),
+                                               dpi=120) #
+                plt.subplots_adjust(hspace=.05)
+
+                fig.suptitle(get_basename_(model.name)+"("+config.name+")",
+                             fontsize=8, weight="bold",y=0.93)
+
+                per_class_metrics = np.array(
+                    precision_recall_fscore_support(truth, prediction, beta=1.0,
+                                                    labels=range(
+                                                        5))).round(
+                    2)
+
+                im = heatmap(per_class_metrics, ['PR', 'RE', 'F1', 'S'],
+                             ('W', 'N1', 'N2', 'N3', 'REM'),
+                             ax=ax1, cmap="YlGn", vmin=0,vmax=1e10,
+                             aspect='auto')
+                texts = annotate_heatmap(im, valfmt="{x:.2f} ")
+
+                im = heatmap(cm_norm, ('W', 'N1', 'N2', 'N3', 'REM'),
+                             ('W', 'N1', 'N2', 'N3', 'REM'),
+                             ax=ax2, cmap="YlGn", aspect='auto',
+                             xlabel="Predicted Label", ylabel="True Label")
+                texts = annotate_heatmap(im, valfmt="{x:.2f} ")
+
+                ax2.get_shared_x_axes().join(ax1, ax2)
+                ax1.tick_params(axis="x", labelbottom=0)
+
+                ax1.tick_params(
+                    axis='x',  # changes apply to the x-axis
+                    which='both',  # both major and minor ticks are affected
+                    bottom=False,  # ticks along the bottom edge are off
+                    top=False,  # ticks along the top edge are off
+                    labelbottom=False)  # labels along the bottom edge are off
+
+    def boxplot(self, ymin=.4):
         models = []
         rows = []
         for i, model in enumerate(self.models):
@@ -177,19 +338,21 @@ class Evaluation(object):
         df = pd.DataFrame(rows, columns=['subject', 'model', 'config',
                                          'accuracy'])
 
-        fig, ax = plt.subplots(figsize=(10,6))
-        ax.set_title("Subject-wise accuracy")
+        fig, ax = plt.subplots(figsize=(6,4), dpi=120)
+        ax.set_title("Subject-wise accuracy", fontsize=14, fontweight='bold')
         ax = sns.boxplot(x="config", y="accuracy", hue="model", data=df,
                          #palette="Set3",
                          order=[c.name for c in self.models[0].configs])
+        ax.tick_params(labelsize=12)
         ax.set_xlabel("")
         ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1),
-                  fancybox=True, shadow=True, ncol=5)
+                  fancybox=True, shadow=True, ncol=5, fontsize=12)
         ax.set_axisbelow(True)
         ax.yaxis.grid(color='gray', linestyle='dashed')
-        ax.set_ylim(ymin=0.4, ymax=1)
+        ax.set_ylim(ymin=ymin, ymax=1)
+        ax.set_ylabel('accuracy', fontsize=12)
 
-    def bar(self, xlabel=None):
+    def bar(self, xlabel=None, ymin=0.4):
         models = []
         means = []
         stds = []
@@ -205,7 +368,6 @@ class Evaluation(object):
                 for j, run in enumerate(config.runs):
                     truth = []
                     prediction = []
-                    #print("run: ", run.name)
                     for path in run.subjects:
                         result = self.read_subject_file(path)
                         truth.append(result['y_true'])
@@ -214,8 +376,10 @@ class Evaluation(object):
                     truth = list(itertools.chain.from_iterable(truth))
                     prediction = list(itertools.chain.from_iterable(prediction))
                     acc = accuracy_score(truth, prediction)
+                    f1m = f1_score(truth, prediction, average='macro')
+                    kappa = cohen_kappa_score(truth, prediction)
                     rows.append(
-                        [model.name, config.name, acc])
+                        [model.name, config.name, acc, f1m, kappa])
                     accs = np.append(accs, acc)
                 model_mean.append(np.mean(accs))
                 model_std.append(np.std(accs))
@@ -224,53 +388,68 @@ class Evaluation(object):
             stds.append(model_std)
 
         df = pd.DataFrame(rows, columns=['model', 'config',
-                                         'accuracy'])
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.set_title("Overall accuracy")
+                                         'accuracy', 'f1m', 'kappa'])
+        fig, ax = plt.subplots(figsize=(6, 4), dpi=120)
+
+        res = df.groupby(['model', 'config'], as_index=False)[
+            'accuracy', 'f1m', 'kappa'].mean()
+        print(res)
+
+        ax.set_title("Overall accuracy", fontsize=14, fontweight='bold')
         ax = sns.barplot(x="config", y="accuracy", hue="model", data=df,
                          #palette="Set3",
                          order=[c.name for c in self.models[0].configs])
+        ax.tick_params(labelsize=12)
         if xlabel is not None:
-            ax.set_xlabel(xlabel)
+            ax.set_xlabel(xlabel, fontsize=12)
+        else:
+            ax.set_xlabel("")
         ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1),
-                    fancybox=True, shadow=True, ncol=5)
+                    fancybox=True, shadow=True, ncol=5, fontsize=12)
         ax.set_axisbelow(True)
         ax.yaxis.grid(color='gray', linestyle='dashed')
-        ax.set_ylim(ymin=0, ymax=1)
-        # ax.set_ylabel('accuracy')
+        ax.set_ylim(ymin=ymin, ymax=1)
+        ax.set_ylabel('accuracy', fontsize=12)
 
-    def hypnogram(self, index=0):
+    def hypnogram(self, index=0, config=None):
         f, axarr = plt.subplots(len(self.models), 1, squeeze=False,
                                 sharex=True, sharey=True,
-                                figsize=(15, 2.5 * len(self.models)))
+                                figsize=(12, 4 * len(self.models)), dpi=120)
         plt.yticks(range(5), ['W', 'N1', 'N2', 'N3', 'REM'])
+
         for i, model in enumerate(self.models):
-            for config in model.configs:
-                run = config.runs[0]
-                path = run.subjects[index]
-                subject = get_basename_(path)
-                f.suptitle(subject)
+            cfg = model.configs[0] if config is None else\
+                next((item for item in model.configs if item.name == config),
+                          None)
+            if cfg is None:
+                raise ValueError(f"config {config} not found")
+            run = cfg.runs[0]
+            path = run.subjects[index]
+            subject = get_basename_(path)
+            f.suptitle(f"{subject}")
 
-                result = self.read_subject_file(path)
-                axarr[i, 0].plot(range(len(result['y_pred'])), result['y_pred'])
-                axarr[i, 0].plot(range(len(result['y_true'])), result[
-                    'y_true'], alpha=0.3)
+            result = self.read_subject_file(path)
+            axarr[i, 0].plot(range(len(result['y_pred'])), result['y_pred'],
+                             label="prediction")
+            axarr[i, 0].plot(range(len(result['y_true'])), result[
+                'y_true'], alpha=0.3, label="truth")
 
-                wrong = np.argwhere(np.not_equal(result['y_true'], result[
-                    'y_pred']))
-                axarr[i, 0].plot(wrong, result['y_pred'][wrong], 'r.')
-                acc = result['acc']
-                axarr[i, 0].set_title(f"{model.name} "
-                                      f"[{acc:.2f}%]")
-                if 'attention' in result.keys():
-                    ax2 = axarr[i, 0].twinx()
-                    # same x-axis
-                    color = 'tab:green'
-                    ax2.set_ylabel('attention', color=color)
-                    attention = result['attention']
-                    ax2.plot(range(len(attention)), attention, color=color)
-                    ax2.tick_params(axis='y', labelcolor=color)
-                    ax2.set_ylim(0, 1)
+            wrong = np.argwhere(np.not_equal(result['y_true'], result[
+                'y_pred']))
+            #axarr[i, 0].plot(wrong, result['y_pred'][wrong], 'r.')
+            acc = result['acc']
+            axarr[i, 0].set_title(f"{model.name} ({cfg.name}) - [{acc:.2f}%]")
+            if 'attention' in result.keys():
+                ax2 = axarr[i, 0].twinx()
+                # same x-axis
+                color = 'tab:green'
+                ax2.set_ylabel('attention', color=color)
+                attention = result['attention']
+                ax2.plot(range(len(attention)), attention, color=color)
+                ax2.tick_params(axis='y', labelcolor=color)
+                ax2.set_ylim(0, 1)
+        axarr[i, 0].legend(loc='upper center', bbox_to_anchor=(0.5, -0.1),
+                           fancybox=True, shadow=True, ncol=5, fontsize=12)
 
     def table(self):
         table = []
@@ -433,6 +612,7 @@ class Evaluation(object):
 if __name__ == '__main__':
     path = '/local/home/hlinus/Dev/SleepLearning/reports/results/Physionet18/Moe'
     e = Evaluation(path)
+    e.extract_experts()
     #e.table()
     #e.extract_voters()
     e.att_table()
