@@ -3,6 +3,8 @@ import os
 import shutil
 import sys
 import glob
+from collections import defaultdict
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -191,23 +193,26 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
     return texts
 
 
-def table_plot_(table, subjects, models):
+def table_plot_(table, subjects, xticks):
     num_subjects = len(subjects)
-    model_names = [m.name + '-' + r.name for m in models for r in m.configs]
+    model_names = xticks#[m.name + '-' + r.name for m in models for r in
+    # m.configs]
 
     aggs = np.stack([np.mean(table, 0), np.std(table, 0)], axis=0)
 
-    fig = plt.figure(figsize=(8.27, 11.69), dpi=320, facecolor='w',
-                     edgecolor='k')
+    #fig = plt.figure(figsize=(8.27, 11.69), dpi=320, facecolor='w',
+    #                 edgecolor='k')
+    fig = plt.figure(figsize=(4, 8), dpi=120, facecolor='w',
+                                      edgecolor='k')
     gs = gridspec.GridSpec(num_subjects + 4, len(model_names))
     ax1 = fig.add_subplot(gs[:num_subjects, :])
     # plt.suptitle(PREFIX, fontsize=12)
     # ax1 =  plt.subplot(211)#fig.add_subplot(2, 1, 1)
-    ax1.imshow(table[:num_subjects], cmap='Oranges', aspect="auto")
+    ax1.imshow(table[:num_subjects], cmap='YlGn', aspect="auto")
 
     for i, j in itertools.product(range(num_subjects),
                                   range(table.shape[1])):
-        ax1.text(j, i, '{:.1f}'.format(table[i, j]),
+        ax1.text(j, i, '{:.3f}'.format(table[i, j]),
                  horizontalalignment="center", fontsize=8,
                  verticalalignment='center', color="black")
     ytick_marks = np.arange(num_subjects)
@@ -216,12 +221,12 @@ def table_plot_(table, subjects, models):
     ax1.set_xticklabels([])
 
     ax2 = fig.add_subplot(gs[num_subjects + 1:, :])
-    ax2.imshow(aggs, cmap='Oranges', aspect="auto")
+    ax2.imshow(aggs, cmap='YlGn', aspect="auto")
     # ax2.set_aspect('equal', 'box')
     # plt.imshow(table,cmap='Oranges')
     for i, j in itertools.product(range(aggs.shape[0]),
                                   range(aggs.shape[1])):
-        ax2.text(j, i, '{:.2f}'.format(aggs[i, j]),
+        ax2.text(j, i, '{:.3f}'.format(aggs[i, j]),
                  horizontalalignment="center", fontsize=8,
                  verticalalignment='center', color="black")
     xtick_marks = np.arange(len(model_names))
@@ -319,7 +324,7 @@ class Evaluation(object):
                     top=False,  # ticks along the top edge are off
                     labelbottom=False)  # labels along the bottom edge are off
 
-    def boxplot(self, ymin=.4):
+    def boxplot(self, xlabel=None, ymin=.4):
         models = []
         rows = []
         for i, model in enumerate(self.models):
@@ -339,18 +344,21 @@ class Evaluation(object):
                                          'accuracy'])
 
         fig, ax = plt.subplots(figsize=(6,4), dpi=120)
-        ax.set_title("Subject-wise accuracy", fontsize=14, fontweight='bold')
+        ax.set_title("Subject-wise accuracy", fontsize=14)
         ax = sns.boxplot(x="config", y="accuracy", hue="model", data=df,
                          #palette="Set3",
                          order=[c.name for c in self.models[0].configs])
-        ax.tick_params(labelsize=12)
-        ax.set_xlabel("")
-        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1),
-                  fancybox=True, shadow=True, ncol=5, fontsize=12)
+        ax.tick_params(labelsize=10)
+        if xlabel is not None:
+            ax.set_xlabel(xlabel, fontsize=10)
+        else:
+            ax.set_xlabel("")
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15),
+                  fancybox=True, shadow=True, ncol=5, fontsize=10)
         ax.set_axisbelow(True)
         ax.yaxis.grid(color='gray', linestyle='dashed')
         ax.set_ylim(ymin=ymin, ymax=1)
-        ax.set_ylabel('accuracy', fontsize=12)
+        ax.set_ylabel('accuracy', fontsize=10)
 
     def bar(self, xlabel=None, ymin=0.4):
         models = []
@@ -377,39 +385,46 @@ class Evaluation(object):
                     prediction = list(itertools.chain.from_iterable(prediction))
                     acc = accuracy_score(truth, prediction)
                     f1m = f1_score(truth, prediction, average='macro')
+
+                    _, _, f1c, _ = precision_recall_fscore_support(truth,
+                                                               prediction,
+                                                        beta=1.0,
+                                                        labels=range(
+                                                            5))
+
                     kappa = cohen_kappa_score(truth, prediction)
                     rows.append(
-                        [model.name, config.name, acc, f1m, kappa])
+                        [model.name, config.name, acc, f1m, kappa] + list(f1c))
                     accs = np.append(accs, acc)
                 model_mean.append(np.mean(accs))
                 model_std.append(np.std(accs))
 
             means.append(model_mean)
             stds.append(model_std)
-
-        df = pd.DataFrame(rows, columns=['model', 'config',
-                                         'accuracy', 'f1m', 'kappa'])
+        cols = ['model', 'config',
+                                         'accuracy', 'f1m', 'kappa', 'W',
+                                         'N1', 'N2', 'N3', 'R']
+        df = pd.DataFrame(rows, columns=cols)
         fig, ax = plt.subplots(figsize=(6, 4), dpi=120)
 
-        res = df.groupby(['model', 'config'], as_index=False)[
-            'accuracy', 'f1m', 'kappa'].mean()
-        print(res)
+        res = df.groupby(['model', 'config'], as_index=False)[cols].mean()
+        print(res.round(3).to_latex())
 
-        ax.set_title("Overall accuracy", fontsize=14, fontweight='bold')
+        ax.set_title("Overall accuracy")
         ax = sns.barplot(x="config", y="accuracy", hue="model", data=df,
                          #palette="Set3",
                          order=[c.name for c in self.models[0].configs])
-        ax.tick_params(labelsize=12)
+        ax.tick_params(labelsize=10)
         if xlabel is not None:
-            ax.set_xlabel(xlabel, fontsize=12)
+            ax.set_xlabel(xlabel, fontsize=10)
         else:
             ax.set_xlabel("")
-        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1),
-                    fancybox=True, shadow=True, ncol=5, fontsize=12)
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15),
+                    fancybox=True, shadow=True, ncol=5, fontsize=10)
         ax.set_axisbelow(True)
         ax.yaxis.grid(color='gray', linestyle='dashed')
         ax.set_ylim(ymin=ymin, ymax=1)
-        ax.set_ylabel('accuracy', fontsize=12)
+        ax.set_ylabel('accuracy', fontsize=10)
 
     def hypnogram(self, index=0, config=None):
         f, axarr = plt.subplots(len(self.models), 1, squeeze=False,
@@ -463,9 +478,10 @@ class Evaluation(object):
                 table.append(column)
         table = np.vstack(table).T
         subjects = [get_basename_(p) for p in run.subjects]
-        table_plot_(table, subjects, self.models)
+        xticks = [m.name + '-' + r.name for m in self.models for r in m.configs]
+        table_plot_(table, subjects, xticks)
 
-    def att_table(self):
+    def att_subject_table(self):
         att_models = []
         table = []
         for i, model in enumerate(self.models):
@@ -484,13 +500,42 @@ class Evaluation(object):
         subjects = [get_basename_(p) for p in run.subjects]
         table_plot_(table, subjects, att_models)
 
+    def att_table(self):
+        att_models = []
+        table = []
+
+        for i, model in enumerate(self.models):
+            for config in model.configs:
+                column = [[],[],[],[],[]]
+                run = config.runs[0]
+                for path in run.subjects:
+                    result = self.read_subject_file(path)
+                    if not 'attention' in result.keys():
+                        continue
+                    att_per_label = zip(result['y_pred'], result['attention'])
+                    for label, a in att_per_label:
+                        column[label].append(a)
+                if column != [[],[],[],[],[]]:
+                    column = [np.mean(np.array(av)) for av in column]
+                    table.append(column)
+                    att_models.append(model.name)
+        table = np.vstack(table)
+        table_plot_(table, att_models, ['W', 'N1', "N2", "N3", "REM"])
+
     def extract_experts(self):
+        def get_acc(prediction, truth):
+            wrong = np.argwhere(np.not_equal(truth, prediction))
+            acc = 100 * (1 - (len(wrong) / len(truth)))
+            return acc
+
         for i, model in enumerate(self.models):
             configs = []
-            model_mean = []
-            model_std = []
+            true_label_dict = None
             for config in model.configs:
                 experts = None
+                soft_votes_dict = defaultdict(lambda : [])
+                hard_votes_dict = defaultdict(lambda : [])
+                true_label_dict = {}
                 configs.append(config.name)
                 accs = np.array([])
                 if len(config.runs) == 0: continue
@@ -509,12 +554,30 @@ class Evaluation(object):
                                 os.path.join(self.path, 'Expert-' +
                                              expert, os.path.basename(config.path), 'Expert-' +
                                              expert))
+
+                    voting_models = ['SOFT-V', 'MAJ-V']
+
+                    for new_model in voting_models:
+                        path = os.path.join(self.path, new_model, os.path.basename(
+                            config.path), os.path.basename(
+                            config.path))
+                        if os.path.exists(path) and os.path.isdir(path):
+                            shutil.rmtree(path)
+
+                    for new_model in voting_models:
+                        os.makedirs(os.path.join(self.path, new_model, os.path.basename(
+                            config.path), os.path.basename(
+                            config.path)))
+
                     for i in range(result['y_experts'].shape[1]):
                         y_expert_prob = result['y_experts'][:, i, :]
                         y_expert_pred = np.argmax(y_expert_prob, 1)
                         expert = result['expert_channels'][i]
                         y_true = result['y_true']
+                        true_label_dict[subject] = y_true
                         a = result['a'][:, i]
+                        hard_votes_dict[subject].append(y_expert_pred)
+                        soft_votes_dict[subject].append(y_expert_prob)
                         wrong = np.argwhere(np.not_equal(y_true, y_expert_pred))
                         acc = 100*(1-wrong.shape[0]/len(y_expert_pred))
                         savepath = os.path.join(self.path, 'Expert-' +
@@ -523,63 +586,30 @@ class Evaluation(object):
                         savedict = {'y_true': y_true, 'y_pred': y_expert_pred,
                                     'acc': acc, 'attention': a}
                         np.savez(savepath, **savedict)
+                for subject, predictions in soft_votes_dict.items():
+                    soft_votes = np.array(predictions)
+                    soft_vote = np.mean(soft_votes, axis=0)
+                    soft_vote = np.argmax(soft_vote, axis=1)
+                    y_true = true_label_dict[subject]
+                    savepath = os.path.join(self.path, 'SOFT-V', os.path.basename(
+                        config.path), os.path.basename(
+                            config.path), subject)
+                    savedict = {'y_true': y_true, 'y_pred': soft_vote,
+                                'acc': get_acc(soft_vote, y_true)}
+                    np.savez(savepath, **savedict)
 
-    def extract_voters(self):
+                for subject, predictions in hard_votes_dict.items():
+                    hard_votes = np.array(predictions)
+                    from scipy.stats import mode
+                    maj_vote = mode(hard_votes, axis=0)[0][0]
+                    y_true = true_label_dict[subject]
+                    savepath = os.path.join(self.path, 'MAJ-V', os.path.basename(
+                        config.path), os.path.basename(
+                            config.path), subject)
+                    savedict = {'y_true': y_true, 'y_pred': maj_vote,
+                                'acc': get_acc(maj_vote, y_true)}
+                    np.savez(savepath, **savedict)
 
-        def get_acc(prediction, truth):
-            wrong = np.argwhere(np.not_equal(truth, prediction))
-            acc = 100 * (1 - (len(wrong) / len(truth)))
-            return acc
-
-        voting_models = ['SOFT-V', 'MAJ-V', 'U-BOUND']
-
-        for new_model in voting_models:
-            path = os.path.join(self.path, new_model)
-            if os.path.exists(path) and os.path.isdir(path):
-                shutil.rmtree(path)
-        self.models = sorted(glob.glob(self.path + '/*'))
-
-        for new_model in voting_models:
-            os.makedirs(os.path.join(self.path, new_model))
-
-        subjects = sorted(glob.glob(self.models[0] + '/*'))
-        subjects = [get_basename_(f) for f in subjects]
-
-        for subject in subjects:
-            hard_votes = []
-            soft_votes = []
-            for i, model in enumerate(self.models):
-                path = os.path.join(model, subject)
-                result = self.read_subject_file(path)
-                hard_votes.append(result['y_pred'])
-                soft_votes.append(result['probs'])
-
-            soft_votes = np.array(soft_votes)
-            soft_vote = np.mean(soft_votes, axis=0)
-            soft_vote = np.argmax(soft_vote, axis=1)
-            savepath = os.path.join(self.path, 'SOFT-V', subject)
-            savedict = {'y_true': result['y_true'], 'y_pred': soft_vote,
-                        'acc': get_acc(soft_vote, result['y_true'])}
-            np.savez(savepath, **savedict)
-
-
-            hard_votes = np.array(hard_votes)
-            from scipy.stats import mode
-            maj_vote = mode(hard_votes, axis=0)[0][0]
-            savepath = os.path.join(self.path, 'MAJ-V', subject)
-            savedict = {'y_true': result['y_true'], 'y_pred': maj_vote,
-                        'acc': get_acc(maj_vote, result['y_true'])}
-            np.savez(savepath, **savedict)
-
-            correct = np.equal(hard_votes, result['y_true'])
-            ubound = np.any(correct, axis=0)
-            ubound_vote = maj_vote
-            ubound_vote[ubound] = result['y_true'][ubound]
-
-            savepath = os.path.join(self.path, 'U-BOUND', subject)
-            savedict = {'y_true': result['y_true'], 'y_pred': ubound_vote,
-                        'acc': get_acc(ubound_vote, result['y_true'])}
-            np.savez(savepath, **savedict)
 
     def read_subject_file(self, path):
         file = np.load(path)
@@ -610,9 +640,11 @@ class Evaluation(object):
 
 
 if __name__ == '__main__':
-    path = '/local/home/hlinus/Dev/SleepLearning/reports/results/Physionet18/Moe'
+    path = '/local/home/hlinus/Dev/SleepLearning/reports/results/Physionet18/Moe-320'
     e = Evaluation(path)
+    #e.bar()
     e.extract_experts()
+    #e.att_table()
     #e.table()
     #e.extract_voters()
-    e.att_table()
+    #e.att_table()
