@@ -193,49 +193,57 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
     return texts
 
 
-def table_plot_(table, subjects, xticks):
-    num_subjects = len(subjects)
-    model_names = xticks#[m.name + '-' + r.name for m in models for r in
+def table_plot_(table, yticks, xticks, agg_table: bool = True):
+    num_yticks = len(yticks)
+
     # m.configs]
 
     aggs = np.stack([np.mean(table, 0), np.std(table, 0)], axis=0)
 
     #fig = plt.figure(figsize=(8.27, 11.69), dpi=320, facecolor='w',
     #                 edgecolor='k')
-    fig = plt.figure(figsize=(4, 8), dpi=120, facecolor='w',
+    fig = plt.figure(figsize=(len(xticks), .5*len(yticks)), dpi=120,
+                     facecolor='w',
                                       edgecolor='k')
-    gs = gridspec.GridSpec(num_subjects + 4, len(model_names))
-    ax1 = fig.add_subplot(gs[:num_subjects, :])
+    gs = gridspec.GridSpec(num_yticks + 4, len(xticks))
+    ax1 = fig.add_subplot(gs[:num_yticks, :])
     # plt.suptitle(PREFIX, fontsize=12)
     # ax1 =  plt.subplot(211)#fig.add_subplot(2, 1, 1)
-    ax1.imshow(table[:num_subjects], cmap='YlGn', aspect="auto")
+    ax1.imshow(table[:num_yticks], cmap='YlGn', aspect="auto")
 
-    for i, j in itertools.product(range(num_subjects),
+    for i, j in itertools.product(range(num_yticks),
                                   range(table.shape[1])):
         ax1.text(j, i, '{:.3f}'.format(table[i, j]),
-                 horizontalalignment="center", fontsize=8,
+                 horizontalalignment="center", fontsize=10,
                  verticalalignment='center', color="black")
-    ytick_marks = np.arange(num_subjects)
+    ytick_marks = np.arange(num_yticks)
     ax1.set_yticks(ytick_marks)
-    ax1.set_yticklabels(subjects)
+    ax1.set_yticklabels(yticks)
     ax1.set_xticklabels([])
 
-    ax2 = fig.add_subplot(gs[num_subjects + 1:, :])
-    ax2.imshow(aggs, cmap='YlGn', aspect="auto")
-    # ax2.set_aspect('equal', 'box')
-    # plt.imshow(table,cmap='Oranges')
-    for i, j in itertools.product(range(aggs.shape[0]),
-                                  range(aggs.shape[1])):
-        ax2.text(j, i, '{:.3f}'.format(aggs[i, j]),
-                 horizontalalignment="center", fontsize=8,
-                 verticalalignment='center', color="black")
-    xtick_marks = np.arange(len(model_names))
-    ax2.set_xticks(xtick_marks)
-    ax2.set_xticklabels(model_names, rotation=60)
+    if agg_table:
+        ax2 = fig.add_subplot(gs[num_yticks + 1:, :])
+        ax2.imshow(aggs, cmap='YlGn', aspect="auto")
+        # ax2.set_aspect('equal', 'box')
+        # plt.imshow(table,cmap='Oranges')
+        for i, j in itertools.product(range(aggs.shape[0]),
+                                      range(aggs.shape[1])):
+            ax2.text(j, i, '{:.3f}'.format(aggs[i, j]),
+                     horizontalalignment="center", fontsize=10,
+                     verticalalignment='center', color="black")
 
-    ytick_marks = np.arange(2)
-    ax2.set_yticks(ytick_marks)
-    ax2.set_yticklabels(['mean', 'std'])
+
+        ytick_marks = np.arange(2)
+        ax2.set_yticks(ytick_marks)
+        ax2.set_yticklabels(['mean', 'std'])
+
+        ax1 = ax2
+
+    xtick_marks = np.arange(len(xticks))
+    ax1.set_xticks(xtick_marks)
+    ax1.set_xticklabels(xticks, rotation=60)
+
+
     return fig
 
 
@@ -426,13 +434,16 @@ class Evaluation(object):
         ax.set_ylim(ymin=ymin, ymax=1)
         ax.set_ylabel('accuracy', fontsize=10)
 
-    def hypnogram(self, index=0, config=None):
-        f, axarr = plt.subplots(len(self.models), 1, squeeze=False,
+    def hypnogram(self, index=0, models=None, config=None):
+        models = self.models if models is None else [m for m in self.models
+                                                     if m.name in models]
+        if len(models) == 0: raise ValueError("no matching models found!")
+        f, axarr = plt.subplots(len(models), 1, squeeze=False,
                                 sharex=True, sharey=True,
-                                figsize=(12, 4 * len(self.models)), dpi=120)
-        plt.yticks(range(5), ['W', 'N1', 'N2', 'N3', 'REM'])
+                                figsize=(10, 3.5 * len(models)), dpi=320)
+        plt.yticks(range(5), ['W', 'N1', 'N2', 'N3', 'REM'], fontsize=10)
 
-        for i, model in enumerate(self.models):
+        for i, model in enumerate(models):
             cfg = model.configs[0] if config is None else\
                 next((item for item in model.configs if item.name == config),
                           None)
@@ -441,30 +452,33 @@ class Evaluation(object):
             run = cfg.runs[0]
             path = run.subjects[index]
             subject = get_basename_(path)
-            f.suptitle(f"{subject}")
+            f.suptitle(f"{subject}", fontsize=12)
 
             result = self.read_subject_file(path)
             axarr[i, 0].plot(range(len(result['y_pred'])), result['y_pred'],
                              label="prediction")
             axarr[i, 0].plot(range(len(result['y_true'])), result[
-                'y_true'], alpha=0.3, label="truth")
+                'y_true'], alpha=0.9, label="truth", linestyle=':')
 
             wrong = np.argwhere(np.not_equal(result['y_true'], result[
                 'y_pred']))
             #axarr[i, 0].plot(wrong, result['y_pred'][wrong], 'r.')
             acc = result['acc']
-            axarr[i, 0].set_title(f"{model.name} ({cfg.name}) - [{acc:.2f}%]")
+            axarr[i, 0].set_title(f"{model.name} ({cfg.name}) - "
+                                  f"[{acc:.2f}%]", fontsize=10)
             if 'attention' in result.keys():
                 ax2 = axarr[i, 0].twinx()
                 # same x-axis
                 color = 'tab:green'
-                ax2.set_ylabel('attention', color=color)
+                ax2.set_ylabel('attention', color=color, fontsize=10)
                 attention = result['attention']
                 ax2.plot(range(len(attention)), attention, color=color)
                 ax2.tick_params(axis='y', labelcolor=color)
                 ax2.set_ylim(0, 1)
-        axarr[i, 0].legend(loc='upper center', bbox_to_anchor=(0.5, -0.1),
+        axarr[i, 0].legend(loc='upper center', bbox_to_anchor=(0.5, -0.15),
                            fancybox=True, shadow=True, ncol=5, fontsize=12)
+        axarr[i, 0].set_xlabel("epoch", fontsize=10)
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
     def table(self):
         table = []
@@ -495,9 +509,11 @@ class Evaluation(object):
                     column.append(np.mean(result['attention']))
                 if column != []:
                     table.append(column)
-                    att_models.append(model)
+                    att_models.append(model.name + f"({config.name})")
         table = np.vstack(table).T
         subjects = [get_basename_(p) for p in run.subjects]
+        #xticks = [m.name + '-' + r.name for m in self.models for r in
+        # m.configs]
         table_plot_(table, subjects, att_models)
 
     def att_table(self):
@@ -520,7 +536,8 @@ class Evaluation(object):
                     table.append(column)
                     att_models.append(model.name)
         table = np.vstack(table)
-        table_plot_(table, att_models, ['W', 'N1', "N2", "N3", "REM"])
+        table_plot_(table, att_models, ['W', 'N1', "N2", "N3", "REM"],
+                    agg_table=False)
 
     def extract_experts(self):
         def get_acc(prediction, truth):
