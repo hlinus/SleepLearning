@@ -46,9 +46,17 @@ class Physionet18(BaseLoader):
         self.hypnogram = np.repeat(annot, sleep_stage_durations)
         assert(len(self.hypnogram) == num_labels)
         self.psgs = {}
+        artefact_mask = np.zeros(num_labels, dtype=bool)
         for channel, signal in zip(data.sig_name, data.d_signal.T):
             # cut unlabeled signal parts (start and end)
             signal_cut = signal[annot_times[0]:annot_times[-1]]
             assert(len(signal_cut)// self.sampling_rate_ // EPOCH_TIME
                    == num_labels)
             self.psgs[channel] = signal_cut.astype(np.int16)
+            psgs1 = signal_cut.reshape(
+                (-1, self.sampling_rate_ * EPOCH_TIME))
+            whole_epoch_zero = np.logical_and(psgs1.min(axis=1) == 0,
+                                              psgs1.max(axis=1) == 0)
+            artefact_mask = np.logical_or(artefact_mask, whole_epoch_zero)
+        self.hypnogram[artefact_mask] = 6  # set label to artifact if min and
+        # max is 0
