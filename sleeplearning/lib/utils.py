@@ -1,6 +1,6 @@
 import shutil
 import os
-
+import glob
 import gridfs
 import h5py as h5py
 import torch
@@ -28,7 +28,7 @@ class SleepLearningDataset(object):
     """Sleep Learning dataset."""
 
     def __init__(self, data_dir: str, subject_csv: str, cvfold: int,
-                 num_labels: int, feature_extractor,neighbors, loader,
+                 num_labels: int, feature_extractor, neighbors, loader,
                  discard_arts=True, transform=None, verbose=False):
         assert(neighbors % 2 == 0)
 
@@ -51,13 +51,11 @@ class SleepLearningDataset(object):
         self.transform = transform
         self.X = []
         self.targets = []
-        # processed dataset does not yet exist?
         subject_labels = []
 
         subject_files = pd.read_csv(subject_csv, header=None)[cvfold].dropna().tolist()
         class_distribution = np.zeros(
             len(BaseLoader.sleep_stages_labels.keys()), dtype=int)
-        #subject_labels = []
 
         for subject_file in subject_files:
             start = time.time()
@@ -65,21 +63,16 @@ class SleepLearningDataset(object):
             subject_labels.append(subject.label)
             psgs_reshaped = {}
             num_epochs = len(subject.hypnogram)
-            artefact_mask = np.zeros(num_epochs, dtype=bool)
             for k, psgs in subject.psgs.items():
                 psgs1 = psgs.reshape(
                     (-1, subject.sampling_rate_ * subject.epoch_length))
                 psgs_reshaped[k] = psgs1
-                whole_epoch_zero = np.logical_and(psgs1.min(axis=1)==0, psgs1.max(axis=1)==0)
-                artefact_mask = np.logical_or(artefact_mask,whole_epoch_zero)
-            subject.hypnogram[artefact_mask] = 6
             # if spectogram used:
             # [num_epochs X num_channels X freq_domain X time_domain]
             # else
             # [num_epochs X num_channels X time_domain]
             feature_matrix = feature_extractor.fit_transform(psgs_reshaped)
             del psgs_reshaped
-            #num_epochs = feature_matrix.shape[0]
 
             if neighbors > 0:
                 # pad with zeros before and after (additional '#neighbors' epochs)
@@ -111,7 +104,6 @@ class SleepLearningDataset(object):
                 self.targets.append(label_int)
                 sample = {'id': id, 'x': sample, 'y': label_int}
                 filename = os.path.join(self.dir, id+'.h5')
-                #np.savez(filename, **sample)
                 with h5py.File(filename, "w") as hf:
                     hf.create_dataset("id", data=sample['id'])
                     hf.create_dataset("x", data=sample['x'])
@@ -145,7 +137,6 @@ class SleepLearningDataset(object):
     def __len__(self):
         return len(self.X)
 
-
 def restore_model_from_mongodb(model_id: int, best: bool):
     client = MongoClient(mongo_url)
     db = client.sacred
@@ -169,8 +160,6 @@ def restore_model_from_mongodb(model_id: int, best: bool):
 def get_sampler(ds: SleepLearningDataset,
                 batch_size: int, oversample: bool, shuffle: bool,
                 kwargs: dict, verbose: bool = True):
-
-    assert(not (oversample and shuffle)) # can not oversample but not shuffle
 
     if oversample:
         class_count = np.fromiter(ds.dataset_info['class_distribution'].values(), dtype=np.float32)
