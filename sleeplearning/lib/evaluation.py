@@ -457,12 +457,13 @@ class Evaluation(object):
             result = self.read_subject_file(path)
             axarr[i, 0].plot(range(len(result['y_pred'])), result['y_pred'],
                              label="prediction")
-            axarr[i, 0].plot(range(len(result['y_true'])), result[
-                'y_true'], alpha=0.9, label="truth", linestyle=':')
+            #axarr[i, 0].plot(range(len(result['y_true'])), result[
+            #    'y_true'], alpha=0.9, label="truth", linestyle=':')
 
             wrong = np.argwhere(np.not_equal(result['y_true'], result[
                 'y_pred']))
-            #axarr[i, 0].plot(wrong, result['y_pred'][wrong], 'r.')
+            axarr[i, 0].plot(wrong, result['y_true'][wrong], '.',
+                             label="error")
             acc = result['acc']
             axarr[i, 0].set_title(f"{model.name} ({cfg.name}) - "
                                   f"[{acc:.2f}%]", fontsize=10)
