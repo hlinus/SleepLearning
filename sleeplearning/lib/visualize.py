@@ -20,6 +20,11 @@ def compute_transition_matrix_(data):
     return M
 
 
+def sleep_stage_distribution_(subject: BaseLoader):
+    counts = np.bincount(subject.hypnogram, minlength=7)
+    return counts
+
+
 class Visualize(object):
     "Class to visualize psg data of a list of sleeplearning objects"
 
@@ -60,14 +65,18 @@ class Visualize(object):
         if channel not in self.data[0].psgs.keys():
             raise ValueError("Channel not available. Available channels "
                              "are:", self.data[0].psgs.keys())
-        channels = [
-            (str(channel), [
-                #'ResamplePoly2(epoch_len=30, fs=200, target_fs=100)',
+
+        fe = [
+                'ResamplePoly2(epoch_len=30, fs=200, target_fs=100)',
                 'BandPass(fs=100, lowpass=45, highpass=.5)',
                 'Spectrogram(fs=100, window=150, stride=100)',
                 'LogTransform()',
-            ] + normalization
-             )]
+            ]
+        fe = normalization + fe if normalization[0].startswith("Quant") else \
+            fe + normalization
+        print(fe)
+        channels = [(str(channel),  fe)]
+
         ldr = utils.get_loader(str(self.data[0].__class__.__name__))
         ds = utils.SleepLearningDataset(data_dir, tmp_csv, 0, 5,
                                    FeatureExtractor(channels).get_features(),
@@ -92,9 +101,10 @@ class Visualize(object):
                 by_label[i] = np.mean(np.stack(l), axis=0).squeeze()
                 pc = axarr[i].pcolormesh(t, f, by_label[i], cmap='jet',
                                          vmin=-1, vmax=1)
-                axarr[i].set_xlabel("time [s]")
-                axarr[i].set_ylabel("frequeny [Hz]")
-                axarr[i].set_title(f'Stage {sleep_stages_labels[i]}')
+                axarr[i].set_xlabel("time [s]", fontsize=12)
+                axarr[i].set_ylabel("frequeny [Hz]", fontsize=12)
+                axarr[i].set_title(f'Stage {sleep_stages_labels[i]}',
+                                   fontsize=14, fontweight='bold')
 
     def transition_distribution(self):
         num_sleep_phases = len(BaseLoader.sleep_stages_labels.keys())
