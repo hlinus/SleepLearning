@@ -7,8 +7,8 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from typing import List, Tuple, Dict
-root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
-sys.path.insert(0, root_dir)
+#root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
+#sys.path.insert(0, root_dir)
 from sleeplearning.lib.feature_extractor import *
 #from sleeplearning.lib.utils import utils
 from sleeplearning.lib import utils
@@ -123,7 +123,7 @@ class Base(object):
         early_stop_count = 0
         self.tenacity = 5
 
-        while not stop_train and self.nepoch <= ms['epochs']:
+        while not stop_train and self.nepoch < ms['epochs']:
             self.nepoch += 1
             tr_metrics, tr_tar, tr_pred = self.trainepoch_(train_loader,
                                                            self.nepoch)
