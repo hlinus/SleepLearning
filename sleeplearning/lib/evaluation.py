@@ -523,6 +523,7 @@ class Evaluation(object):
 
         for i, model in enumerate(self.models):
             for config in model.configs:
+                print(model.name)
                 column = [[],[],[],[],[]]
                 run = config.runs[0]
                 for path in run.subjects:
@@ -530,10 +531,13 @@ class Evaluation(object):
                     if not 'attention' in result.keys():
                         continue
                     att_per_label = zip(result['y_pred'], result['attention'])
+                    assert(not np.isnan(np.min(result['attention'])))
                     for label, a in att_per_label:
                         column[label].append(a)
                 if column != [[],[],[],[],[]]:
-                    column = [np.mean(np.array(av)) for av in column]
+                    column = [np.mean(np.array(av)) if av != [] else 0 for av
+                              in column]
+
                     table.append(column)
                     att_models.append(model.name)
         table = np.vstack(table)
@@ -658,10 +662,10 @@ class Evaluation(object):
 
 
 if __name__ == '__main__':
-    path = '/local/home/hlinus/Dev/SleepLearning/reports/results/Physionet18/Moe-320'
+    path = '/local/home/hlinus/Dev/SleepLearning/reports/results/Physionet18/AttentionNetDrop0.1'
     e = Evaluation(path)
     #e.bar()
-    e.extract_experts()
+    e.att_table()
     #e.att_table()
     #e.table()
     #e.extract_voters()

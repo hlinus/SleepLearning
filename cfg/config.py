@@ -37,8 +37,29 @@ def cfg():
         'nbrs': 8,
         'fold': None,  # only specify for CV
         'oversample': False,
+        'transforms': None,
         'nclasses': 5,
     }
+
+
+@ex.named_config
+def ChannelDropout10():
+    ds = {
+        'transforms': ['SensorDropout((.1,.1,.1,.1,.1,.1,.1,.1,.1,.1))']
+    }
+
+@ex.named_config
+def ChannelDropout10_2():
+    ds = {
+        'transforms': ['SensorDropout((.2,.2,.2,.2,.2,.2,.2,.2,.2,.2))']
+    }
+
+@ex.named_config
+def ChannelDropout3():
+    ds = {
+        'transforms': ['SensorDropout((.1,.1,.1))']
+    }
+
 
 @ex.named_config
 def MediumAdaptive():
@@ -174,6 +195,142 @@ def Amoe_rs40_0_part1():
 
 
 @ex.named_config
+def Amoe_rs320_0_part1_3C():
+    arch = 'Amoe'
+
+    ms = {
+        'epochs': 100,
+        'dropout': .5,
+        'optim': 'adam,lr=0.00001',
+        'expert_models':
+            [os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2711-F3M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2707-E1M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2708-C4M1-rs160_0_part1.pth.tar'),
+             ],
+        'train_emb': False,
+        'weighted_loss': True
+    }
+
+
+@ex.named_config
+def AttentionNet_rs320_0_part1_3C():
+    arch = 'AttentionNet'
+
+    ms = {
+        'epochs': 100,
+        'dropout': .5,
+        'optim': 'adam,lr=0.00001',
+        'attention': True,
+        'expert_models':
+            [os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2711-F3M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2707-E1M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2708-C4M1-rs160_0_part1.pth.tar'),
+             ],
+        'train_emb': False,
+        'weighted_loss': True
+    }
+
+@ex.named_config
+def AttentionNetConv_rs320_0_part1_3C():
+    arch = 'AttentionNetConv'
+
+    ms = {
+        'epochs': 100,
+        'dropout': .5,
+        'optim': 'adam,lr=0.00001',
+        'attention': True,
+        'expert_models':
+            [os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2711-F3M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2707-E1M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2708-C4M1-rs160_0_part1.pth.tar'),
+             ],
+        'train_emb': False,
+        'weighted_loss': True
+    }
+
+@ex.named_config
+def AttentionNet_rs320_0_part1():
+    arch = 'AttentionNet'
+
+    ms = {
+        'epochs': 100,
+        'dropout': .5,
+        'optim': 'adam,lr=0.00001',
+        'attention': True,
+        'context': True,
+        'expert_models':
+            [os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2711-F3M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2713-O2M1-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2707-E1M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2710-C3M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2708-C4M1-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2709-F4M1-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2712-O1M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2714-CHIN-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2716-ABD-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2715-CHEST-rs160_0_part1.pth.tar'),
+             ],
+        'train_emb': False,
+        'weighted_loss': True
+    }
+
+
+@ex.named_config
+def AttentionNetConv_rs320_0_part1():
+    arch = 'AttentionNetConv'
+
+    ms = {
+        'epochs': 100,
+        'dropout': .5,
+        'optim': 'adam,lr=0.00001',
+        'attention': True,
+        'expert_models':
+            [os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2711-F3M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2713-O2M1-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2707-E1M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2710-C3M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2708-C4M1-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2709-F4M1-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2712-O1M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2714-CHIN-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2716-ABD-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2715-CHEST-rs160_0_part1.pth.tar'),
+             ],
+        'train_emb': False,
+        'weighted_loss': True
+    }
+
+
+@ex.named_config
 def Amoe_rs320_0_part1():
     arch = 'Amoe'
 
@@ -206,7 +363,6 @@ def Amoe_rs320_0_part1():
         'train_emb': False,
         'weighted_loss': True
     }
-
 
 @ex.named_config
 def Amoe_FzPz():
@@ -375,7 +531,7 @@ def singlechanexp2_bak():
     arch = 'SingleChanExpert2'
 
     ms = {
-        'epochs': 15,
+        'epochs': 50,
         'dropout': .5,
         'optim': 'adam,lr=0.00001',
         'weighted_loss': True
@@ -412,8 +568,52 @@ def exp_avg():
 
     ms = {
         'epochs': 1,
-        'optim': 'adam,lr=0.00005',
-        'expert_ids': list(range(988,995)),
+        'optim': 'adam,lr=0.00001',
+        'dropout': 0,
+        'expert_models':
+            [os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2711-F3M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2713-O2M1-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2707-E1M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2710-C3M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2708-C4M1-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2709-F4M1-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2712-O1M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2714-CHIN-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2716-ABD-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2715-CHEST-rs160_0_part1.pth.tar'),
+             ],
+        'train_emb': False,
+        'weighted_loss': True
+    }
+
+
+@ex.named_config
+def exp_avg_3C():
+    arch = 'ExpertsAvg'
+
+    ms = {
+        'epochs': 1,
+        'optim': 'adam,lr=0.00001',
+        'dropout': 0,
+        'expert_models':
+            [os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2711-F3M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2707-E1M2-rs160_0_part1.pth.tar'),
+             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
+                          '2708-C4M1-rs160_0_part1.pth.tar'),
+             ],
+        'train_emb': False,
         'weighted_loss': True
     }
 
@@ -569,6 +769,38 @@ def ALL_ALL_CHAN_2D():
              )
              ]
     }
+
+@ex.named_config
+def C4E1F3_2D():
+    ds = {
+        'channels': [
+            ('C4-M1', [
+                'ResamplePoly(epoch_len=30, fs=200)',
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]
+             ),
+            ('E1-M2', [
+                'ResamplePoly(epoch_len=30, fs=200)',
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]
+             ),
+            ('F3-M2', [
+                'ResamplePoly(epoch_len=30, fs=200)',
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]
+             ),
+             ]
+    }
+
 
 @ex.named_config
 def ALL_ALL_CHAN_2DF():
@@ -768,6 +1000,21 @@ def F3M2_2DP():
                 'TwoDFreqSubjScaler()'
             ]
             )
+        ]
+    }
+
+@ex.named_config
+def F3M2_2DQQ():
+    ds = {
+        'channels': [
+            ('F3-M2', [
+                'QuantileNormalization("F3M2")',
+                'ResamplePoly(epoch_len=30, fs=200)',
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+            ]
+             )
         ]
     }
 
@@ -1588,6 +1835,20 @@ def sleepedf_Pz_2D():
         'loader': 'Sleepedf',
         'channels': [
             ('EEG-Pz-Oz', [
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ])
+        ]
+    }
+
+@ex.named_config
+def sleepedf_EOG_2D():
+    ds = {
+        'loader': 'Sleepedf',
+        'channels': [
+            ('EOG-horizontal', [
                 'BandPass(fs=100, lowpass=45, highpass=.5)',
                 'Spectrogram(fs=100, window=150, stride=100)',
                 'LogTransform()',

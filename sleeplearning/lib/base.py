@@ -14,7 +14,8 @@ from sleeplearning.lib.feature_extractor import *
 from sleeplearning.lib import utils
 import numpy as np
 #from sleeplearning.lib.granger_loss import GrangerLoss
-#from sleeplearning.lib.transforms import SensorDropout
+from torchvision.transforms import Compose
+from sleeplearning.lib.transforms import SensorDropout
 
 
 class Base(object):
@@ -45,13 +46,16 @@ class Base(object):
 
     def fit(self, arch, ms, data_dir, loader, train_csv, val_csv, channels,
             nclasses, fold,
-            nbrs, batch_size_train, batch_size_val, oversample,
+            nbrs, batch_size_train, batch_size_val, oversample, transforms,
             early_stop=False):
 
         ldr = utils.get_loader(loader)
 
-        sensor_dropout = None #SensorDropout((.5,.5,.5,.5))
-
+        if transforms is not None:
+            transforms = [eval(t) for t in transforms]
+            transforms = Compose(transforms)
+        else:
+            transforms = None
         print("\nTRAINING SET: ", end="")
         train_ds = utils.SleepLearningDataset(data_dir, train_csv, fold,
                                               nclasses,
@@ -59,7 +63,7 @@ class Base(object):
                                                   channels).get_features(),
                                               nbrs,
                                               ldr, discard_arts=True,
-                                              transform=sensor_dropout,
+                                              transform=transforms,
                                               verbose=self.verbose)
 
         print("\nVAL SET: ", end="")
@@ -397,7 +401,7 @@ class Base(object):
         return topk_acc, pred[0]
 
     def get_loader_from_csv_(self, data_dir, csv_path, fold, batch_size,
-                             shuffle):
+                             shuffle, transform):
         ldr = utils.get_loader(self.ds['loader'])
         dataset = utils.SleepLearningDataset(data_dir, csv_path, fold,
                                              self.ms['nclasses'],
@@ -405,6 +409,7 @@ class Base(object):
                                                  self.ds['channels'])
                                              .get_features(),
                                              self.ds['nbrs'], ldr,
+                                             transform=transform,
                                              verbose=self.verbose)
 
         data_loader = utils.get_sampler(dataset, batch_size, False, shuffle,

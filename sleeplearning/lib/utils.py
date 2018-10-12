@@ -182,7 +182,8 @@ def get_sampler(ds: SleepLearningDataset,
     return dataloader
 
 
-def get_model_output(clf, data_dir, subject) -> Tuple[Dict, Dict]:
+def get_model_output(clf, data_dir, subject, channel_dropout=None) \
+        -> Tuple[Dict, Dict]:
     import tempfile
     subject_path = os.path.join(data_dir, subject)
     subject_path = os.path.normpath(os.path.abspath(subject_path))
@@ -190,8 +191,13 @@ def get_model_output(clf, data_dir, subject) -> Tuple[Dict, Dict]:
     temp_path = tempfile.mkdtemp()
     tmp_csv = os.path.join(temp_path, 'tmp_csv')
     np.savetxt(tmp_csv, np.array([subject]), delimiter=",", fmt='%s')
-    test_loader = clf.get_loader_from_csv_(data_dir, tmp_csv, 0, 100,
-                                            False)
+    if channel_dropout is not None:
+        from sleeplearning.lib.transforms import SensorDropout
+        transform = SensorDropout(channel_dropout)
+    else:
+        transform = None
+    test_loader = clf.get_loader_from_csv_(data_dir, tmp_csv, 0, 100, False,
+                                           transform=transform)
     output: dict = None
     metrics: dict = None
     clf.model.eval()

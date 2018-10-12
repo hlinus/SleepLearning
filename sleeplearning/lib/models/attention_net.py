@@ -3,6 +3,7 @@ import os
 import sys
 
 import gridfs
+from torch.nn import ModuleList
 
 from sleeplearning.lib.models.single_chan_expert import SingleChanExpert
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
@@ -87,6 +88,48 @@ class FeatureExtractorCurrentEpoch(nn.Module):
         return x
 
 
+class FECurrentEpochChannel(nn.Module):
+    def __init__(self, input_shape, bn=True):
+        super(FECurrentEpochChannel, self).__init__()
+        self.input_shape = input_shape
+        neighbors = input_shape[2] // 30 -1
+        def get_conv_block():
+            return nn.Sequential(
+                nn.MaxPool2d((2, 2), stride=(2, 2)),
+                Conv2dWithBn(1, filter_size=(3, 3), n_filters=64,
+                             stride=1),
+                nn.MaxPool2d((2, 2), stride=(2, 2)),
+                #
+                Conv2dWithBn(64, filter_size=(3, 3), n_filters=64, stride=1),
+                nn.MaxPool2d((3, 3), stride=(3, 3)),
+                #
+                Conv2dWithBn(64, filter_size=(3, 3), n_filters=96, stride=1),
+                nn.MaxPool2d((3, 2), stride=(3, 2)),
+            )
+        feature_extractor = [get_conv_block() for _ in range(input_shape[0])]
+        self.dfns = ModuleList(feature_extractor)
+
+        outdim = _get_output_dim(get_conv_block(), (1, input_shape[1], input_shape[
+            2]))
+        self.fc = nn.Linear(outdim[1]*outdim[2]*outdim[3]*input_shape[0], 128)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(128, 128)
+        self.dropout = nn.Dropout(p=0.5)
+
+    def forward(self, x):
+        z = [dfn(torch.unsqueeze(channel, 1)) for (dfn, channel) in
+             zip(self.dfns, torch.unbind(x, 1))]
+        z = [y.view(y.size(0), 1, -1) for y in z]
+
+        x = torch.cat(z, 1)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        x = self.dropout(x)
+        return x
+
+
 class AttentionWeightNet(nn.Module):
     def __init__(self, encoder_dim = 128, decoder_dim = 128):
         super(AttentionWeightNet, self).__init__()
@@ -98,10 +141,48 @@ class AttentionWeightNet(nn.Module):
         xavier_normal(self.W2)
         xavier_normal(self.v)
 
-    def forward(self, e, d):
-        act = self.tanh(torch.matmul(e.unsqueeze(1), self.W1)
-                  + torch.matmul(self.W2, d.unsqueeze(2)).permute(0,2,1))
+    def forward(self, h, e_s):
+        act = self.tanh(torch.matmul(e_s.unsqueeze(1), self.W1)
+                  + torch.matmul(self.W2, h.unsqueeze(2)).permute(0,2,1))
         x = torch.sum(self.v.squeeze() * act.squeeze(1), dim=1).unsqueeze(1)
+        return x
+
+
+class AttentionWeightNetFC(nn.Module):
+    def __init__(self, encoder_dim = 128, decoder_dim = 128):
+        super(AttentionWeightNetFC, self).__init__()
+        self.fc1 = nn.Linear(256, 128)
+        self.relu1 = nn.ReLU()
+        self.fc2 = nn.Linear(128, 128)
+        self.relu2 = nn.ReLU()
+        self.fc3 = nn.Linear(128, 1)
+
+    def forward(self, h, e_s):
+        x = torch.cat((h, e_s), dim=1)
+        x = self.fc1(x)
+        x = self.relu1(x)
+        x = self.fc2(x)
+        x = self.relu2(x)
+        x = self.fc3(x)
+        return x
+
+
+class AttentionVectorNet(nn.Module):
+    def __init__(self, encoder_dim = 128, decoder_dim = 128):
+        super(AttentionVectorNet, self).__init__()
+        self.fc1 = nn.Linear(256, 128)
+        self.relu1 = nn.ReLU()
+        self.fc2 = nn.Linear(128, 128)
+        self.relu2 = nn.ReLU()
+        self.fc3 = nn.Linear(128, 128)
+
+    def forward(self, h, e_s):
+        x = torch.cat((h, e_s), dim=1)
+        x = self.fc1(x)
+        x = self.relu1(x)
+        x = self.fc2(x)
+        x = self.relu2(x)
+        x = self.fc3(x)
         return x
 
 
@@ -162,9 +243,9 @@ class AttentionNet(nn.Module):
 
         self.transnet = [nn.Sequential(
             nn.Linear(emb_dim, emb_dim),
-            #nn.Dropout(p=self.dropout),
             #nn.ReLU(),
             #nn.Linear(emb_dim, emb_dim),
+            #nn.Dropout(p=self.dropout),
             #nn.Tanh(),
         )
             for _ in range(len(experts))]
@@ -176,10 +257,13 @@ class AttentionNet(nn.Module):
         self.classifier = nn.Sequential(
              nn.Dropout(p=self.dropout),
              nn.Linear(input_dim_classifier, emb_dim // 2),
+             #nn.Linear(input_dim_classifier, input_dim_classifier),
              nn.ReLU(),
+             #nn.Linear(input_dim_classifier, emb_dim // 2),
+             #nn.ReLU(),
              nn.Dropout(p=self.dropout),
              nn.Linear(emb_dim // 2, num_classes),
-            )
+        )
 
     def train(self, mode=True):
         super(AttentionNet, self).train(mode=mode)
@@ -203,25 +287,24 @@ class AttentionNet(nn.Module):
         #emb = torch.stack(emb, dim=1)
         x = x.view(x.size(0), x.size(1), x.size(2), x.size(3)//30, -1).permute(0,3,1,2,4)
         x = x[:, x.size(1)//2, :]
-        ht = self.ht(x)
+        h = self.ht(x)
 
         # [bs, nchannels]
         if self.attention:
             # [bs, nchannels * (embdim)]
             temb = [t(e) for t, e in zip(self.transnet, emb)]
-
-            a = [self.attention_weights(ht, hs) for hs
-                                 in temb]
-
+            a = [self.attention_weights(h, t_s) for t_s in temb]
             a = torch.stack(a, dim=1)
             a = F.softmax(a, dim=1)
+
+            #a = torch.ones(a.shape).cuda() / 10 # uniform attention weights
             temb = torch.stack(temb, dim=1)
-            c_t = torch.mul(temb, a)
-            c_t = torch.sum(c_t, dim=1)
-            attention_vector = self.attention_vector(torch.cat((c_t, ht),
+            c = torch.mul(temb, a)
+            c = torch.sum(c, dim=1)
+            attention_vector = self.attention_vector(torch.cat((c, h),
                                                                dim=1))
         else:
-            attention_vector = ht
+            attention_vector = h
 
         # [bs, nclasses]
         logits = self.classifier(attention_vector)
