@@ -72,11 +72,11 @@ class FeatureExtractorCurrentEpoch(nn.Module):
             )
 
         outdim = _get_output_dim(self.block, input_shape)
-        self.fc = nn.Linear(outdim[1]*outdim[2]*outdim[3], 128)
+        self.fc = nn.Linear(outdim[1]*outdim[2]*outdim[3], 128, bias=True)
         self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(128, 128)
+        self.fc2 = nn.Linear(128, 128, bias=True)
         self.dropout = nn.Dropout(p=0.5)
-
+        #self.bn = nn.BatchNorm1d(128)
 
     def forward(self, x):
         x = self.block(x)
@@ -148,6 +148,16 @@ class AttentionWeightNet(nn.Module):
         return x
 
 
+class AttentionVasvani(nn.Module):
+    def __init__(self, encoder_dim = 128, decoder_dim = 128):
+        super(AttentionVasvani, self).__init__()
+
+    def forward(self, k, q):
+        x = torch.sum(k*q, dim=1, keepdim=True)
+        x /= torch.sqrt(torch.norm(k, p=1, dim=1, keepdim=True))
+        return x
+
+
 class AttentionWeightNetFC(nn.Module):
     def __init__(self, encoder_dim = 128, decoder_dim = 128):
         super(AttentionWeightNetFC, self).__init__()
@@ -195,6 +205,7 @@ class AttentionNet(nn.Module):
         self.train_emb = ms['train_emb']
         self.attention = True if 'attention' not in ms.keys() or ms[
             'attention'] else False
+        #self.normalize_context = ms['normalize_context']
 
         if 'expert_models' in ms.keys():
             experts = []
@@ -224,9 +235,12 @@ class AttentionNet(nn.Module):
 
         C, F = ms['input_dim'][0], ms['input_dim'][1]
 
-        self.ht = FeatureExtractorCurrentEpoch((C, F, 30))
-
         num_channels = ms['input_dim'][0]
+        #self.fes = [FeatureExtractorCurrentEpoch((1, F, 30)) for _ in
+        #            range(num_channels)]
+        #self.fes = nn.ModuleList(self.fes)
+        self.ht = FeatureExtractorCurrentEpoch((num_channels, F, 30))
+
         emb_dim = list(experts[0].model.children())[-1].in_features
         assert (num_channels == len(self.experts_emb))
 
@@ -239,14 +253,19 @@ class AttentionNet(nn.Module):
                                     nn.Linear((emb_dim),
                                               emb_dim),
                                     nn.Tanh(),
+                                    #nn.ReLU()
                                 ) if self.attention else None
 
         self.transnet = [nn.Sequential(
             nn.Linear(emb_dim, emb_dim),
-            #nn.ReLU(),
-            #nn.Linear(emb_dim, emb_dim),
-            #nn.Dropout(p=self.dropout),
-            #nn.Tanh(),
+            # nn.ReLU(),
+            # nn.Dropout(p=self.dropout),
+            # nn.Linear(emb_dim, emb_dim),
+            # nn.ReLU(),
+            # nn.Dropout(p=self.dropout),
+            # nn.Linear(emb_dim, emb_dim),
+            # #nn.Dropout(p=self.dropout),
+            # #nn.Tanh(),
         )
             for _ in range(len(experts))]
         self.transnet = nn.ModuleList(self.transnet) if self.attention \
@@ -256,11 +275,11 @@ class AttentionNet(nn.Module):
 
         self.classifier = nn.Sequential(
              nn.Dropout(p=self.dropout),
-             nn.Linear(input_dim_classifier, emb_dim // 2),
              #nn.Linear(input_dim_classifier, input_dim_classifier),
-             nn.ReLU(),
-             #nn.Linear(input_dim_classifier, emb_dim // 2),
              #nn.ReLU(),
+             #nn.Dropout(p=self.dropout),
+             nn.Linear(input_dim_classifier, emb_dim // 2),
+             nn.ReLU(),
              nn.Dropout(p=self.dropout),
              nn.Linear(emb_dim // 2, num_classes),
         )
@@ -285,8 +304,11 @@ class AttentionNet(nn.Module):
 
         # [bs, nchannel, embdim ]
         #emb = torch.stack(emb, dim=1)
-        x = x.view(x.size(0), x.size(1), x.size(2), x.size(3)//30, -1).permute(0,3,1,2,4)
+        x = x.view(x.size(0), x.size(1), x.size(2), x.size(3)//30,
+         -1).permute(0,3,1,2,4)
         x = x[:, x.size(1)//2, :]
+        #x = [torch.unsqueeze(channel, 1) for channel in
+        #     torch.unbind(x, 1)]
         h = self.ht(x)
 
         # [bs, nchannels]
@@ -299,6 +321,9 @@ class AttentionNet(nn.Module):
 
             #a = torch.ones(a.shape).cuda() / 10 # uniform attention weights
             temb = torch.stack(temb, dim=1)
+            # nomalize
+            #if self.normalize_context:
+            #    temb = temb / torch.sum(temb, dim=1, keepdim=True)
             c = torch.mul(temb, a)
             c = torch.sum(c, dim=1)
             attention_vector = self.attention_vector(torch.cat((c, h),
