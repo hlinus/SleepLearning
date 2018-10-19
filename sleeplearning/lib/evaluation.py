@@ -434,7 +434,8 @@ class Evaluation(object):
         ax.set_ylim(ymin=ymin, ymax=1)
         ax.set_ylabel('accuracy', fontsize=10)
 
-    def hypnogram(self, index=0, models=None, config=None):
+    def hypnogram(self, index=0, models=None, config=None, start=None,
+                  end=None):
         models = self.models if models is None else [m for m in self.models
                                                      if m.name in models]
         if len(models) == 0: raise ValueError("no matching models found!")
@@ -455,8 +456,15 @@ class Evaluation(object):
             f.suptitle(f"{subject}", fontsize=12)
 
             result = self.read_subject_file(path)
+            # only part of record
+            if start is None and end is None:
+                end = len(result['y_pred'])
+                start = 0
+
+            axarr[i, 0].set_xlim(xmin=start, xmax=end)
             axarr[i, 0].plot(range(len(result['y_pred'])), result['y_pred'],
                              label="prediction")
+            axarr[i, 0].set_ylim(ymin=0)
             #axarr[i, 0].plot(range(len(result['y_true'])), result[
             #    'y_true'], alpha=0.9, label="truth", linestyle=':')
 
@@ -476,6 +484,11 @@ class Evaluation(object):
                 ax2.plot(range(len(attention)), attention, color=color)
                 ax2.tick_params(axis='y', labelcolor=color)
                 ax2.set_ylim(0, 1)
+            if 'drop' in result.keys():
+                dropped = np.argwhere(result['drop'])
+                for d in dropped:
+                    axarr[i, 0].axvspan(d-0.5, d+0.5, alpha=0.2, color='red')
+
         axarr[i, 0].legend(loc='upper center', bbox_to_anchor=(0.5, -0.15),
                            fancybox=True, shadow=True, ncol=5, fontsize=12)
         axarr[i, 0].set_xlabel("epoch", fontsize=10)
@@ -598,6 +611,9 @@ class Evaluation(object):
                         y_true = result['y_true']
                         true_label_dict[subject] = y_true
                         a = result['a'][:, i]
+                        drop = None
+                        if 'drop_channels' in result.keys():
+                            drop = result['drop_channels'][:, i]
                         hard_votes_dict[subject].append(y_expert_pred)
                         soft_votes_dict[subject].append(y_expert_prob)
                         wrong = np.argwhere(np.not_equal(y_true, y_expert_pred))
@@ -607,6 +623,8 @@ class Evaluation(object):
                                              expert, subject)
                         savedict = {'y_true': y_true, 'y_pred': y_expert_pred,
                                     'acc': acc, 'attention': a}
+                        if drop is not None:
+                            savedict['drop'] = drop
                         np.savez(savepath, **savedict)
                 for subject, predictions in soft_votes_dict.items():
                     soft_votes = np.array(predictions)
@@ -652,21 +670,26 @@ class Evaluation(object):
             result['probs'] = file['y_probs']
         if 'expert_channels' in file.keys():
             result['expert_channels'] = file['expert_channels']
-        if 'y_experts'  in file.keys():
+        if 'y_experts' in file.keys():
             result['y_experts'] = file['y_experts']
         if 'a' in file.keys():
             result['a'] = file['a']
         if 'attention' in file.keys():
             result['attention'] = file['attention']
+        if 'drop_channels' in file.keys():
+            result['drop_channels'] = file['drop_channels']
+        if 'drop' in file.keys():
+            result['drop'] = file['drop']
         return result
 
 
 if __name__ == '__main__':
-    path = '/local/home/hlinus/Dev/SleepLearning/reports/results/Physionet18/AttentionNetDrop0.1'
+    path = '/local/home/hlinus/Dev/SleepLearning/reports/results/Physionet18' \
+           '/DroppingChannels'
     e = Evaluation(path)
     #e.bar()
-    e.att_table()
+    e.hypnogram()
     #e.att_table()
     #e.table()
-    #e.extract_voters()
+    #e.extract_experts()
     #e.att_table()
