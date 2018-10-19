@@ -27,8 +27,15 @@ def main(args):
         clf.restore(model)
         print("channels: \n", [c[0] for c in clf.ds['channels']])
 
+        if args.channel_drop is not None:
+            channel_drop = tuple(map(float, args.channel_drop[1:-1].split(',')))
+            suffix = '_'+args.channel_drop
+        else:
+            channel_drop = None
+            suffix = ''
+
         output_dir = os.path.join(args.output_dir, os.path.basename(
-            os.path.normpath(model)))
+            os.path.normpath(model))+suffix)
 
         if os.path.exists(output_dir) and os.path.isdir(output_dir):
             shutil.rmtree(output_dir)
@@ -39,7 +46,7 @@ def main(args):
         channel_accuracies = np.array([])
         for subject in subjects:
             output, metrics = utils.get_model_output(clf, data_dir,
-                                                     subject)
+                                                     subject, channel_drop)
             accuracy = metrics['top1'].avg
             savedict = dict(subject=subject, acc=accuracy)
             for k, v in output.items():
@@ -53,7 +60,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='SleepLearning Validation')
     parser.add_argument('--model',
-                        default='../models/Evaluation-Physionet18-Dataset-Sizes',
+                        default='../models/3008_Attnet_ChannelDrop0.1.pth.tar',
                         required=False,
                         help='file or folder of pytorch model (*.pth.tar')
     parser.add_argument('--data_dir',
@@ -63,8 +70,11 @@ if __name__ == '__main__':
                         default='../cfg/physionet18/test_rs50_0.csv',
                         help='csv file containing validation/test subjects')
     parser.add_argument('--output_dir',
-                        default='/cluster/scratch/hlinus/Dataset-Sizes',
+                        default='/cluster/scratch/hlinus/AttentionNet',
                         help='folder where predictions are saved')
+    parser.add_argument('--channel_drop',
+                        required=False,
+                        help='tuple of channel dropout probabilities')
     args = parser.parse_args()
 
     main(args)
