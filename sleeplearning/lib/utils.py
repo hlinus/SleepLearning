@@ -158,7 +158,7 @@ def restore_model_from_mongodb(model_id: int, best: bool):
 
 
 def get_sampler(ds: SleepLearningDataset,
-                batch_size: int, oversample: bool, shuffle: bool,
+                batch_size: int, oversample: bool, shuffle: bool, train:bool,
                 kwargs: dict, verbose: bool = True):
 
     if oversample:
@@ -171,7 +171,8 @@ def get_sampler(ds: SleepLearningDataset,
     else:
         sampler = SequentialSampler(ds)
 
-    dataloader = DataLoader(ds, batch_size=batch_size, sampler=sampler, **kwargs)
+    dataloader = DataLoader(ds, batch_size=batch_size, sampler=sampler,
+                            drop_last=train, **kwargs)
 
     if verbose:
         print('class distribution:', ds.dataset_info['class_distribution'])
@@ -209,7 +210,7 @@ def get_model_output(clf, data_dir, subject, channel_dropout=None) \
             batch_out, loss, metrics = clf.predict_batch_(data, target,
                                                            metrics)
             if output is None:
-                output = {'y_true': [], 'y_probs': []}
+                output = {'y_true': [], 'y_probs': [], 'drop_channels': []}
                 for k in batch_out.keys():
                     output[k] = []
 
@@ -218,6 +219,16 @@ def get_model_output(clf, data_dir, subject, channel_dropout=None) \
             output['y_probs'].append(F.softmax(batch_out['logits'], dim=1)
                                      .data.cpu().numpy())
             output['y_true'].append(target.data.cpu().numpy())
+            batch_drop_channels = []
+            for sample in data:
+                sample_drop_channels = torch.std(sample.view(sample.size(0), -1),
+                                        dim=1) == 0# == torch.zeros((10))
+                sample_drop_channels = sample_drop_channels.data.cpu().numpy().astype(bool)
+                batch_drop_channels.append([sample_drop_channels])
+            output['drop_channels'].append(np.concatenate(np.array(
+                batch_drop_channels), axis=0))
+            #output['drop_channels'].append(drop)
+
     for k, v in output.items():
         output[k] = np.concatenate(output[k], axis=0)
 

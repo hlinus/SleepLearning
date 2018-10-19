@@ -77,11 +77,11 @@ class Base(object):
 
         print("\nTRAIN LOADER:")
         train_loader = utils.get_sampler(train_ds, batch_size_train,
-                                         oversample, True, self.kwargs,
+                                         oversample, True, True, self.kwargs,
                                          verbose=True)
         print("\nVAL LOADER:")
         val_loader = utils.get_sampler(val_ds, batch_size_val,
-                                       False, False, self.kwargs,
+                                       False, False, False, self.kwargs,
                                        verbose=True)
 
         # save parameters for model reloading
@@ -413,7 +413,7 @@ class Base(object):
                                              verbose=self.verbose)
 
         data_loader = utils.get_sampler(dataset, batch_size, False, shuffle,
-                                        self.kwargs,
+                                        False, self.kwargs,
                                         verbose=self.verbose)
         return data_loader
 
