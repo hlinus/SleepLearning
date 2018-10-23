@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from scipy import signal
 from scipy.signal import firwin, lfilter, resample, resample_poly
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -204,6 +205,29 @@ class BandPass(BaseEstimator, TransformerMixin):
         x = lfilter(fir, 2, x)
         return x
 
+
+class QuantileNormalization(BaseEstimator, TransformerMixin):
+    """
+        Quantile normalization with linear interpolation based on precomputed
+        quantiles averaged over the whole dataset
+    """
+
+    def __init__(self, channel: str):
+        pass
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, x):
+        ref = np.load(os.path.join('..', 'data', 'quantiles_rs40_5M.npy'))
+        ori = x.reshape(-1)
+        s1 = float(ref.shape[0])  # size in
+        s2 = float(ori.shape[0])  # size out
+        ori_new = ori.copy()
+        tmp = np.interp(np.arange(s2) / (s2 - 1) * (s1 - 1),
+                        np.arange(s1), ref[:])
+        ori_new[np.argsort(ori[:])] = tmp
+        return ori_new.reshape(x.shape[0], 1, -1)
 
 class TwoDScaler(BaseEstimator, TransformerMixin):
     """
