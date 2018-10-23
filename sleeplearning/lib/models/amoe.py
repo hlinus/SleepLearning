@@ -83,6 +83,7 @@ class Amoe(nn.Module):
         assert (num_channels == len(self.experts_emb))
 
         self.attention_net = nn.Sequential(
+             nn.Dropout(p=self.dropout),
              nn.Linear(num_channels * (emb_dim+num_classes), num_channels *
                        emb_dim //
                                        4),
@@ -94,9 +95,9 @@ class Amoe(nn.Module):
 
     def train(self, mode=True):
         super(Amoe, self).train(mode=mode)
-        if not self.train_emb:
-            self.experts_emb.eval()  # keep the embedding models in eval mode
-        self.expert_y.eval()
+        #if not self.train_emb:
+        #    self.experts_emb.eval()  # keep the embedding models in eval mode
+        #self.expert_y.eval()
 
     def forward(self, x):
         emb = [exp(torch.unsqueeze(channel, 1).contiguous())
