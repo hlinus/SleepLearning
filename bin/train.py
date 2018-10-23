@@ -4,10 +4,10 @@ root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 import torch
 import numpy as np
-from cfg.config import ex
 from sacred.stflow import LogFileWriter
 from sleeplearning.lib.base import Base
 from sleeplearning.lib.logger import Logger
+from cfg.config import ex
 import json
 
 
@@ -33,6 +33,10 @@ def train(ds, arch, ms, cuda, log_dir, seed, save_model, save_best_only,
         with open(cfg_path, 'w') as outfile:
             json.dump(_run.config, outfile)
         print("log_dir JSON: ", log_dir)
+        if 'expert_models' in ms.keys():
+            ms['expert_models'] = [os.path.join(x, f"fold{ds['fold']}",
+                                                "checkpoint.pth.tar")
+                                   for x in ms['expert_models']]
 
     if _run._id is not None:
         # Capture TensorBoard logs with sacred
