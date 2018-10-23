@@ -352,7 +352,7 @@ class Evaluation(object):
                                          'accuracy'])
 
         fig, ax = plt.subplots(figsize=(6,4), dpi=120)
-        ax.set_title("Subject-wise accuracy", fontsize=14)
+        #ax.set_title("Subject-wise accuracy", fontsize=14)
         ax = sns.boxplot(x="config", y="accuracy", hue="model", data=df,
                          #palette="Set3",
                          order=[c.name for c in self.models[0].configs])
@@ -366,7 +366,7 @@ class Evaluation(object):
         ax.set_axisbelow(True)
         ax.yaxis.grid(color='gray', linestyle='dashed')
         ax.set_ylim(ymin=ymin, ymax=1)
-        ax.set_ylabel('accuracy', fontsize=10)
+        ax.set_ylabel('subject accuracy', fontsize=10)
 
     def bar(self, xlabel=None, ymin=0.4):
         models = []
@@ -464,7 +464,7 @@ class Evaluation(object):
             axarr[i, 0].set_xlim(xmin=start, xmax=end)
             axarr[i, 0].plot(range(len(result['y_pred'])), result['y_pred'],
                              label="prediction")
-            axarr[i, 0].set_ylim(ymin=0)
+            axarr[i, 0].set_ylim(ymin=0.0)
             #axarr[i, 0].plot(range(len(result['y_true'])), result[
             #    'y_true'], alpha=0.9, label="truth", linestyle=':')
 
@@ -473,8 +473,10 @@ class Evaluation(object):
             axarr[i, 0].plot(wrong, result['y_true'][wrong], '.',
                              label="error")
             acc = result['acc']
-            axarr[i, 0].set_title(f"{model.name} ({cfg.name}) - "
-                                  f"[{acc:.2f}%]", fontsize=10)
+            #axarr[i, 0].set_title(f"{model.name} ({cfg.name}) - "
+            axarr[i, 0].set_title(f"{model.name} [ACC: {acc:.2f}%]",
+                                  fontsize=10)
+            #                      f"[{acc:.2f}%]", fontsize=10)
             if 'attention' in result.keys():
                 ax2 = axarr[i, 0].twinx()
                 # same x-axis
@@ -483,7 +485,7 @@ class Evaluation(object):
                 attention = result['attention']
                 ax2.plot(range(len(attention)), attention, color=color)
                 ax2.tick_params(axis='y', labelcolor=color)
-                ax2.set_ylim(0, 1)
+                ax2.set_ylim(0.0, 1)
             if 'drop' in result.keys():
                 dropped = np.argwhere(result['drop'])
                 for d in dropped:
