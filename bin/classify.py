@@ -1,52 +1,38 @@
-"""Script for classifying sleep phases"""
-###############################################################################
-import numpy as np
 import os
 import sys
+root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
+sys.path.insert(0, root_dir)
+from sleeplearning.lib.base import Base
 import argparse
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, ROOT_DIR)
-from sleeplearning.lib.base import SleepLearning
-from sleeplearning.lib.loaders.carofile import Carofile
+from cfg.config import *
+import numpy as np
 
-# --------------------------------------------------------------------------- #
-# -------------------- Command line arguments parsing ----------------------- #
-# --------------------------------------------------------------------------- #
-parser = argparse.ArgumentParser(prog='Sleep Learning classification')
-subparsers = parser.add_subparsers(help='supported file types', dest="filetype")
 
-# create the parser for the "caro" command
-parser_mat = subparsers.add_parser('caro',
-                        help='for a single .mat files including all PSGs')
-parser_mat.add_argument("--i", dest="fn", default=os.path.abspath(
-    os.path.join(os.path.dirname(__file__),
-                 '..')) + '/data/raw/caroline/WESA_D01_20171121ff_MLready.mat',
-                        help="filepath of carofile")
+def main(args):
+    clf = Base(cuda=torch.cuda.is_available(), verbose=False)
+    clf.restore(args.model)
+    print("channels: \n", [c[0] for c in clf.ds['channels']])
 
-# create the parser for the "physio" command
-parser_b = subparsers.add_parser('physio',
-                                 help='physionet files are not yet supported')
+    prediction = clf.predict(args.subject)
+    subject_name = os.path.basename(os.path.normpath(args.subject))
+    output_path = os.path.join(args.output_dir, subject_name + '.csv')
+    np.savetxt(output_path, prediction, delimiter=",", fmt='%i')
+    print(f"Prediction saved to {output_path}")
 
-# parse some argument lists
-args = vars(parser.parse_args())
 
-# --------------------------------------------------------------------------- #
-# ----------------- Load file and do basic preprocessing --------------------- #
-# --------------------------------------------------------------------------- #
-subject = None
-if 'fn' not in args.keys():
-    print("Please specify a filename.")
-elif not os.path.isfile(args['fn']):
-    print(args['fn'] + " DOES NOT EXIST!")
-elif args['filetype'] == 'caro':
-    subject = Carofile(args['fn'], verbose=True)
-elif args['filetype'] == 'physio':
-    print("not yet supported")
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='SleepLearning Validation')
+    parser.add_argument('--model',
+                        default='../models/cv_sleepedf_Fz_2D_singlechanexp2_6464962FC_MP/fold0/checkpoint.pth.tar',
+                        required=False,
+                        help='file or folder of pytorch model (*.pth.tar')
+    parser.add_argument('--subject',
+                        default='../data/sleepedf/SC4001E0-PSG',
+                        help='subject file to predict')
+    parser.add_argument('--output_dir',
+                        default='',
+                        help='folder where predictions are saved')
+    args = parser.parse_args()
 
-# --------------------------------------------------------------------------- #
-# ----------------- Perform classification procedure ------------------------ #
-# --------------------------------------------------------------------------- #
-if subject is not None:
-    pred, _, _ = SleepLearning(True).predict(subject)
-    np.savetxt("prediction.csv", pred, delimiter=",", fmt='%i')
-    print("Prediction saved as 'prediction.csv'. ")
+    main(args)
+
