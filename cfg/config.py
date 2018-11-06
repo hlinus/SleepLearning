@@ -2,8 +2,7 @@ import os
 import torch
 import sys
 from sacred import Experiment
-from sacred.observers import MongoObserver
-
+from sacred.observers import MongoObserver, FileStorageObserver
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
 
@@ -12,7 +11,9 @@ ex = Experiment(base_dir=basedir)
 mongo_url = 'mongodb://toor:y0qXDe3qumoawG0rPfnS@cab-e81-31/admin?authMechanism' \
             '=SCRAM-SHA-1'
 MONGO_OBSERVER = MongoObserver.create(url=mongo_url, db_name='sacred')
-ex.observers.append(MONGO_OBSERVER)
+#ex.observers.append(MONGO_OBSERVER)
+LOGDIR = '../logs'
+ex.observers.append(FileStorageObserver.create(LOGDIR))
 
 
 @ex.config
@@ -20,7 +21,7 @@ def cfg():
     cmt = ''  # comment for this run
     cuda = torch.cuda.is_available()
     seed = 42  # for reproducibility
-    log_dir = '/cluster/scratch/hlinus/logs'
+    log_dir = LOGDIR
     save_model = False
     save_best_only = False
     early_stop = True
@@ -314,37 +315,6 @@ def AttentionNet_rs320_0_part1():
         'weighted_loss': True
     }
 
-@ex.named_config
-def AttentionNet_rs320_0_part1_7C():
-    arch = 'AttentionNet'
-
-    ms = {
-        'epochs': 100,
-        'dropout': .5,
-        'optim': 'adam,lr=0.00001',
-        'attention': True,
-        'normalize_context': False,
-        'context': True,
-        'expert_models':
-            [os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
-                          '2711-F3M2-rs160_0_part1.pth.tar'),
-             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
-                          '2713-O2M1-rs160_0_part1.pth.tar'),
-             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
-                          '2707-E1M2-rs160_0_part1.pth.tar'),
-             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
-                          '2710-C3M2-rs160_0_part1.pth.tar'),
-             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
-                          '2708-C4M1-rs160_0_part1.pth.tar'),
-             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
-                          '2709-F4M1-rs160_0_part1.pth.tar'),
-             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
-                          '2712-O1M2-rs160_0_part1.pth.tar'),
-             ],
-        'train_emb': False,
-        'weighted_loss': True
-    }
-
 
 @ex.named_config
 def AttentionNetConv_rs320_0_part1():
@@ -501,34 +471,6 @@ def LateFusion():
                           '2716-ABD-rs160_0_part1.pth.tar'),
              os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
                           '2715-CHEST-rs160_0_part1.pth.tar'),
-             ],
-    }
-
-@ex.named_config
-def LateFusion_7C():
-    arch = 'LateFusion'
-
-    ms = {
-        'epochs': 50,
-        'dropout': .5,
-        'train_emb': True,
-        'optim': 'adam,lr=0.00001',
-        'weighted_loss': True,
-        'expert_models':
-            [os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
-                          '2711-F3M2-rs160_0_part1.pth.tar'),
-             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
-                          '2713-O2M1-rs160_0_part1.pth.tar'),
-             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
-                          '2707-E1M2-rs160_0_part1.pth.tar'),
-             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
-                          '2710-C3M2-rs160_0_part1.pth.tar'),
-             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
-                          '2708-C4M1-rs160_0_part1.pth.tar'),
-             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
-                          '2709-F4M1-rs160_0_part1.pth.tar'),
-             os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
-                          '2712-O1M2-rs160_0_part1.pth.tar')
              ],
     }
 
