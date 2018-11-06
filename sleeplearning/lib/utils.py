@@ -252,6 +252,12 @@ def get_model_arch(arch, ms):
     module_name = ''.join(
         [arch[i] + '_' if (i + 1) in ind else str.lower(arch[i])
          for i in range(len(arch))])
+    module_name = module_name if module_name != 'single_chan_expert2' else \
+        'single_chan_expert'
+    arch = arch if arch != 'SingleChanExpert2' else 'SingleChanExpert'
+    print("module: ", module_name)
+    print("arch: ", arch)
+    print(ms)
     arch = eval(module_name + '.' + arch)(ms)
     return arch
 
