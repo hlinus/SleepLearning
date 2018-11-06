@@ -7,6 +7,8 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from typing import List, Tuple, Dict
+import matplotlib
+matplotlib.use("Agg")  # fix backend before wfdb library
 #root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 #sys.path.insert(0, root_dir)
 from sleeplearning.lib.feature_extractor import *
@@ -184,7 +186,7 @@ class Base(object):
         tmp_csv = os.path.join(temp_path, 'tmp_csv')
         np.savetxt(tmp_csv, np.array([subject_name]), delimiter=",", fmt='%s')
         test_loader = self.get_loader_from_csv_(data_dir, tmp_csv, 0, 100,
-                                                False)
+                                                False, None)
         output: dict = None
         metrics: dict = None
         self.model.eval()
@@ -216,18 +218,19 @@ class Base(object):
         tmp_csv = os.path.join(temp_path, 'tmp_csv')
         np.savetxt(tmp_csv, np.array([subject_name]), delimiter=",", fmt='%s')
         test_loader = self.get_loader_from_csv_(data_dir, tmp_csv, 0, 100,
-                                                False)
+                                                False, None)
         self.model.eval()
-        prediction = None
+        prediction = np.array([])
         with torch.no_grad():
             for data, target in test_loader:
                 if self.cudaEfficient:
                     data, target = data.cuda(), target.cuda()
                 # compute output
-                output = self.model(data)
-                _, pred = output.topk(1, 1, True, True)
+                batch_out, _, _ = self.predict_batch_(data, target,
+                                                      None)
+                pred = batch_out['y_pred']
                 prediction = np.append(prediction, pred.data.cpu().numpy())
-        return prediction.astype(int)
+        return prediction
 
     def predict_proba(self, subject_path):
         import tempfile
