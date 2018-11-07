@@ -353,12 +353,12 @@ def AttentionNetConv_rs320_0_part1():
 
 
 @ex.named_config
-def Amoe_rs320_0_part1():
+def AMOE_RS160():
     arch = 'Amoe'
 
     ms = {
         'epochs': 100,
-        'dropout': .5,
+        'dropout': .1,
         'optim': 'adam,lr=0.00001',
         'expert_models':
             [os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
@@ -382,7 +382,7 @@ def Amoe_rs320_0_part1():
              os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
                           '2715-CHEST-rs160_0_part1.pth.tar'),
              ],
-        'train_emb': False,
+        'train_emb': True,
         'weighted_loss': True
     }
 
@@ -684,7 +684,7 @@ def exp_avg_3C():
 
 
 @ex.named_config
-def ALL_CHAN_2D():
+def PHYSIONET_EEG_EOG_2D():
     ds = {
 
         'channels': [
@@ -749,7 +749,7 @@ def ALL_CHAN_2D():
 
 
 @ex.named_config
-def ALL_ALL_CHAN_2D():
+def PHYSIONET_EEG_EOG_EMG_2D():
     ds = {
         'channels': [
             ('ABD', [
