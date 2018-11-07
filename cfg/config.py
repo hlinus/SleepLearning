@@ -279,12 +279,12 @@ def AttentionNetConv_rs320_0_part1_3C():
     }
 
 @ex.named_config
-def AttentionNet_rs320_0_part1():
+def AttentionNet_RS160():
     arch = 'AttentionNet'
 
     ms = {
         'epochs': 100,
-        'dropout': .5,
+        'dropout': .2,
         'optim': 'adam,lr=0.00001',
         'attention': True,
         'normalize_context': False,
@@ -311,7 +311,7 @@ def AttentionNet_rs320_0_part1():
              os.path.join('..', 'models', 'Mixture-Of-Experts-rs160_0_part1',
                           '2715-CHEST-rs160_0_part1.pth.tar'),
              ],
-        'train_emb': False,
+        'train_emb': True,
         'weighted_loss': True
     }
 
