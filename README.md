@@ -67,12 +67,34 @@ On leonard we request 5 computing nodes with scratch space and a GPU:
 
 `module load python_gpu/3.6.4`
 
-`bsub -n 5 -W 03:59 -R "rusage[mem=6000,scratch=25000,ngpus_excl_p=1]" ~/miniconda3/envs/sl/bin/python train.py with PHYSIONET_EEG_EOG_EMG_2D AMOE_RS160 ChannelDropout10 save_model=True ds.data_dir=../data/physionet-challenge-train/ ds.train_csv=../cfg/physionet18/physio18_debug.csv ds.val_csv=../cfg/physionet18/physio18_debug_val.csv`
+`bsub -n 5 -W 03:59 -R "rusage[mem=6000,scratch=65000,ngpus_excl_p=1]" ~/miniconda3/envs/sl/bin/python train.py with PHYSIONET_EEG_EOG_EMG_2D AMOE_RS160 ChannelDropout10 save_model=True ds.data_dir=../data/physionet-challenge-train/ ds.train_csv=../cfg/physionet18/physio18_debug.csv ds.val_csv=../cfg/physionet18/physio18_debug_val.csv`
 
 
 #### Attention Model
+Training the Attention model local on all channels (6 EEG, 1 EOG, 3 EMG) with 
+10% channel dropout:
+
+`python train.py with PHYSIONET_EEG_EOG_EMG_2D AttentionNet_RS160 ChannelDropout10 save_model=True ds.data_dir=../data/physionet-challenge-train/ ds.train_csv=../cfg/physionet18/physio18_debug.csv ds.val_csv=../cfg/physionet18/physio18_debug_val.csv`
+
+On leonard we request 5 computing nodes with scratch space and a GPU:
+
+`module load python_gpu/3.6.4`
+
+`bsub -n 5 -W 03:59 -R "rusage[mem=6000,scratch=65000,ngpus_excl_p=1]" ~/miniconda3/envs/sl/bin/python train.py with PHYSIONET_EEG_EOG_EMG_2D AttentionNet_RS160 ChannelDropout10 save_model=True ds.data_dir=../data/physionet-challenge-train/ ds.train_csv=../cfg/physionet18/physio18_debug.csv ds.val_csv=../cfg/physionet18/physio18_debug_val.csv`
 
 #### Late Fusion Model
+Training the LateFusion model local on all channels (6 EEG, 1 EOG, 3 EMG) with 
+10% channel dropout:
+
+`python train.py with PHYSIONET_EEG_EOG_EMG_2D LateFusion ChannelDropout10 
+save_model=True ds.data_dir=../data/physionet-challenge-train/ ds.train_csv=../cfg/physionet18/physio18_debug.csv ds.val_csv=../cfg/physionet18/physio18_debug_val.csv`
+
+On leonard we request 5 computing nodes with scratch space and a GPU:
+
+`module load python_gpu/3.6.4`
+
+`bsub -n 5 -W 03:59 -R "rusage[mem=6000,scratch=65000,ngpus_excl_p=1]" ~/miniconda3/envs/sl/bin/python train.py with PHYSIONET_EEG_EOG_EMG_2D LateFusion ChannelDropout10 save_model=True ds.data_dir=../data/physionet-challenge-train/ ds.train_csv=../cfg/physionet18/physio18_debug.csv ds.val_csv=../cfg/physionet18/physio18_debug_val.csv`
+
 
 ### train on Sleep-EDF (cross validation)
 To reproduce the 20-fold CV results on the Sleep-EDF dataset (Fpz channel) run 
@@ -84,13 +106,26 @@ To run the cross validation on leonhard adjust
 
 ### evaluate trained model on a testset
 
-validate.py
+To evaluate a trained model on a test set refer to the command line 
+documentation of bin/validate.py:
+
+`python validate.py --h
+usage: validate.py [-h] [--model MODEL] [--data_dir DATA_DIR]
+                   [--subject_csv SUBJECT_CSV] [--output_dir OUTPUT_DIR]
+                   [--channel_drop CHANNEL_DROP]`
+
+This will create a .npz file for each subject in the subject_csv and save in 
+the output_dir. It is recommended to save the results in 
+
+`reports/results/<dataset>/<experiment>/<model arch>/<channel>`
+
+A jupyter notebook can then be used analyze overall accuracy, the confusion 
+matrix, etc. An example can be found [here](https://github.com/hlinus/SleepLearning/blob/master/reports/Evaluation-SleepEDF.ipynb). 
 
 ### advanced trained model options
 All the steps to load a trained model, view its training parameters and how 
-to score on single subject is illustrated in a jupyter notebook:
-
-reports/Load-Saved-Model.ipynb
+to score on a single subject is illustrated in [this](https://github.com/hlinus/SleepLearning/blob/master/reports/Load-Saved-Model.ipynb) jupyter
+ notebook.
 
 
 
