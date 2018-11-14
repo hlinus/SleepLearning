@@ -14,11 +14,17 @@
 ## Usage
 
 IMPORTANT: 
-* download the sample data first: `cd data && bash download-sample-data.sh`
-* [SPACE and TMP data]!!! 
-* [Non debug data]
+* Download the sample data first: `cd data && bash download-sample-data.sh`
+* When training/prediciting the processed data is by default stored in 
+<data_dir>/tmp/. To store the data at different location you must set the 
+TMPDIR environment variable accordingly. This variable is set automatically 
+on leonahrd when requesting scratch space. It is recommended to store the 
+data in /cluster/scratch/<username> and request enough scratch space on the 
+executing compute nodes. 
+* Be aware the required space for the processed data scales with the number 
+of neighbors. Additionally for the Physionet18 dataset there is an additional
+ factor 4 (!) from the conversion from int8 (raw data) to float32.
 
-[INCLUDE MODELS IN SAMPLE DATA SCRIPT]
 
 
 ### classify
@@ -103,6 +109,8 @@ the following bash script in the bin directory:
 
 To run the cross validation on leonhard adjust 
 `bash train-sleepedf-singlechanexp.sh --data_dir=<path to data> --leonhard `
+
+!!! EVALUATE CROSS VALIDATION !!!
 
 ### evaluate trained model on a testset
 
